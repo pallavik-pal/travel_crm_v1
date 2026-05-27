@@ -70,6 +70,7 @@ model Booking {
   bookingCode           String            @unique
   tourId                String            @db.ObjectId
   travelerId            String            @db.ObjectId
+  bookedBy              String?
   pickupPoint           String?
   seatNumber            String?
   roomSharingPreference String?
@@ -87,6 +88,7 @@ model Booking {
 model BookingMember {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   bookingId   String    @db.ObjectId
+  serialNumber Int?
   fullName    String
   gender      String?
   dateOfBirth DateTime?

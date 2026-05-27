@@ -8,6 +8,43 @@ import { ArrowLeft, CalendarDays, MapPin, Users } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+const getAge = (dateOfBirth: string | null) => {
+  if (!dateOfBirth) {
+    return '-';
+  }
+
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+
+  return age;
+};
+
+const formatRoomPreferences = (value: string) => {
+  if (!value) {
+    return 'Not set';
+  }
+
+  try {
+    const rooms = JSON.parse(value) as { roomNumber?: string; preferenceType?: string }[];
+
+    if (!Array.isArray(rooms) || rooms.length === 0) {
+      return value;
+    }
+
+    return rooms
+      .map((room) => [room.roomNumber, room.preferenceType].filter(Boolean).join(': '))
+      .join(', ');
+  } catch {
+    return value;
+  }
+};
+
 export default async function TourDetailsPage({
   params,
 }: {
@@ -92,25 +129,29 @@ export default async function TourDetailsPage({
           <CardHeader>
             <CardTitle>Booked Customers</CardTitle>
             <CardDescription>
-              Customer, booking, payment, document, and operations details for this tour
+              Customer and payment details for this tour
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Booking</TableHead>
-                  <TableHead>Seat / Room</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Documents</TableHead>
-                  <TableHead>Operations</TableHead>
+                  <TableHead>Serial No</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Gender</TableHead>
+                  <TableHead>Age</TableHead>
+                  <TableHead>Room Preferences</TableHead>
+                  <TableHead>Contact No</TableHead>
+                  <TableHead>Advance Paid</TableHead>
+                  <TableHead>Balance</TableHead>
+                  <TableHead>Advance Date</TableHead>
+                  <TableHead>Booked By</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {tour.bookings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-gray-600">
+                    <TableCell colSpan={10} className="text-center text-gray-600">
                       No customers have booked this tour yet.
                     </TableCell>
                   </TableRow>
@@ -119,72 +160,62 @@ export default async function TourDetailsPage({
                     <TableRow key={booking.id}>
                       <TableCell>
                         <div className="space-y-1">
+                          <p>{booking.traveler.serialNumber}</p>
+                          {booking.members.map((member) => (
+                            <p key={member.id} className="text-sm text-gray-600">
+                              {member.serialNumber ?? '-'}
+                            </p>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
                           <p className="font-medium">{booking.traveler.fullName}</p>
-                          <p className="text-sm text-gray-600">{booking.traveler.phone}</p>
-                          {booking.traveler.email && (
-                            <p className="text-sm text-gray-600">{booking.traveler.email}</p>
-                          )}
-                          {booking.members.length > 0 && (
-                            <div className="pt-2">
-                              <p className="text-xs font-semibold uppercase text-gray-500">
-                                Family / Group
-                              </p>
-                              <div className="mt-1 space-y-1">
-                                {booking.members.map((member) => (
-                                  <p key={member.id} className="text-sm text-gray-700">
-                                    {member.fullName}
-                                    {member.relation ? ` (${member.relation})` : ''}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                          {booking.members.map((member) => (
+                            <p key={member.id} className="text-sm text-gray-600">
+                              {member.fullName}
+                              {member.relation ? ` (${member.relation})` : ''}
+                            </p>
+                          ))}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <p className="font-medium">{booking.bookingCode}</p>
-                          <Badge variant="secondary">{booking.status}</Badge>
-                          <p className="text-sm text-gray-600">{formatDate(booking.createdAt)}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <p>Seat: {booking.seatNumber || 'Not assigned'}</p>
-                          <p>Room: {booking.roomSharingPreference || 'Not set'}</p>
-                          <p>Pickup: {booking.pickupPoint || 'Not set'}</p>
+                          <p>{booking.traveler.gender || '-'}</p>
+                          {booking.members.map((member) => (
+                            <p key={member.id} className="text-sm text-gray-600">
+                              {member.gender || '-'}
+                            </p>
+                          ))}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <Badge>{booking.payment.status}</Badge>
-                          <p className="text-sm">{formatCurrency(booking.payment.advancePaid)} paid</p>
-                          <p className="text-sm text-orange-600">
-                            {formatCurrency(booking.payment.balanceAmount)} balance
-                          </p>
+                          <p>{getAge(booking.traveler.dateOfBirth)}</p>
+                          {booking.members.map((member) => (
+                            <p key={member.id} className="text-sm text-gray-600">
+                              {getAge(member.dateOfBirth)}
+                            </p>
+                          ))}
                         </div>
                       </TableCell>
+                      <TableCell>{formatRoomPreferences(booking.roomSharingPreference)}</TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {booking.documents.length === 0 ? (
-                            <Badge variant="secondary">None</Badge>
-                          ) : (
-                            booking.documents.map((document) => (
-                              <Badge key={document.id} variant="secondary">
-                                {document.type}: {document.status}
-                              </Badge>
-                            ))
-                          )}
+                        <div className="space-y-1">
+                          <p>{booking.traveler.phone}</p>
+                          {booking.members.map((member) => (
+                            <p key={member.id} className="text-sm text-gray-600">
+                              {member.phone || '-'}
+                            </p>
+                          ))}
                         </div>
                       </TableCell>
+                      <TableCell>{formatCurrency(booking.payment.advancePaid)}</TableCell>
+                      <TableCell>{formatCurrency(booking.payment.balanceAmount)}</TableCell>
                       <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <p>PNR: {booking.operations.pnr || 'Not set'}</p>
-                          <p>Flight: {booking.operations.flightStatus}</p>
-                          <p>Visa: {booking.operations.visaStatus}</p>
-                          <p>Hotel: {booking.operations.hotelStatus}</p>
-                        </div>
+                        {booking.payment.paymentDate ? formatDate(booking.payment.paymentDate) : '-'}
                       </TableCell>
+                      <TableCell>{booking.bookedBy || '-'}</TableCell>
                     </TableRow>
                   ))
                 )}

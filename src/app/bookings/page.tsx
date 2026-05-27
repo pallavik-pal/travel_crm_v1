@@ -15,6 +15,7 @@ import { type FormEvent, useState } from 'react';
 
 type BookingMemberRecord = {
   id: string;
+  serialNumber: number | null;
   fullName: string;
   gender: string;
   dateOfBirth: string;
@@ -29,17 +30,30 @@ type BookingMemberRecord = {
 type BookingRecord = {
   id: string;
   bookingCode: string;
+  bookedBy: string;
   travelerName: string;
   tour: string;
   phone: string;
   email: string;
+  gender: string;
+  dateOfBirth: string;
+  address: string;
   memberCount: number;
   members: BookingMemberRecord[];
   seat: string;
   roomSharing: string;
+  pickupPoint: string;
   totalAmount: number;
   advancePaid: number;
   balance: number;
+  paymentDate: string;
+  dueDate: string;
+  paymentMode: string;
+  transactionId: string;
+  pnr: string;
+  flightStatus: string;
+  visaStatus: string;
+  hotelStatus: string;
   paymentStatus: string;
   status: string;
 };
@@ -48,51 +62,90 @@ const mockBookings: BookingRecord[] = [
   {
     id: '1',
     bookingCode: 'BK-202505-ABC123',
+    bookedBy: '',
     travelerName: 'Rajesh Kumar',
     tour: 'Thailand May Batch',
     phone: '9876543210',
     email: 'rajesh@email.com',
+    gender: '',
+    dateOfBirth: '',
+    address: '',
     memberCount: 0,
     members: [],
     seat: 'A-01',
     roomSharing: 'double',
+    pickupPoint: '',
     totalAmount: 45000,
     advancePaid: 35000,
     balance: 10000,
+    paymentDate: '',
+    dueDate: '',
+    paymentMode: '',
+    transactionId: '',
+    pnr: '',
+    flightStatus: '',
+    visaStatus: '',
+    hotelStatus: '',
     paymentStatus: 'partial',
     status: 'confirmed',
   },
   {
     id: '2',
     bookingCode: 'BK-202505-DEF456',
+    bookedBy: '',
     travelerName: 'Priya Singh',
     tour: 'Thailand May Batch',
     phone: '9876543211',
     email: 'priya@email.com',
+    gender: '',
+    dateOfBirth: '',
+    address: '',
     memberCount: 0,
     members: [],
     seat: 'A-02',
     roomSharing: 'single',
+    pickupPoint: '',
     totalAmount: 45000,
     advancePaid: 45000,
     balance: 0,
+    paymentDate: '',
+    dueDate: '',
+    paymentMode: '',
+    transactionId: '',
+    pnr: '',
+    flightStatus: '',
+    visaStatus: '',
+    hotelStatus: '',
     paymentStatus: 'paid',
     status: 'confirmed',
   },
   {
     id: '3',
     bookingCode: 'BK-202505-GHI789',
+    bookedBy: '',
     travelerName: 'Amit Patel',
     tour: 'Kashmir June Batch',
     phone: '9876543212',
     email: 'amit@email.com',
+    gender: '',
+    dateOfBirth: '',
+    address: '',
     memberCount: 0,
     members: [],
     seat: 'B-01',
     roomSharing: 'triple',
+    pickupPoint: '',
     totalAmount: 35000,
     advancePaid: 15000,
     balance: 20000,
+    paymentDate: '',
+    dueDate: '',
+    paymentMode: '',
+    transactionId: '',
+    pnr: '',
+    flightStatus: '',
+    visaStatus: '',
+    hotelStatus: '',
     paymentStatus: 'pending',
     status: 'confirmed',
   },
@@ -100,6 +153,7 @@ const mockBookings: BookingRecord[] = [
 
 type FamilyMemberForm = {
   id: string;
+  serialNumber?: number | null;
   fullName: string;
   gender: string;
   dateOfBirth: string;
@@ -147,6 +201,15 @@ const parseRoomPreferences = (roomSharing: string): RoomPreferenceForm[] => {
   }
 };
 
+const splitName = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  return {
+    firstName: parts[0] ?? '',
+    lastName: parts.slice(1).join(' '),
+  };
+};
+
 export default function BookingsPage() {
   const [bookings, setBookings] = useRecords('/api/bookings', [] as typeof mockBookings);
   const [tours] = useRecords('/api/tours', [] as typeof mockTours);
@@ -155,6 +218,8 @@ export default function BookingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [editingBooking, setEditingBooking] = useState<BookingRecord | null>(null);
+  const [viewingBooking, setViewingBooking] = useState<BookingRecord | null>(null);
+  const [deletingBookingId, setDeletingBookingId] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberForm[]>([]);
   const [roomPreferences, setRoomPreferences] = useState<RoomPreferenceForm[]>([]);
   const [advancePaidInput, setAdvancePaidInput] = useState('');
@@ -174,6 +239,7 @@ export default function BookingsPage() {
     calculatedTotalAmount - Number(advancePaidInput || 0),
     0
   );
+  const editingName = splitName(editingBooking?.travelerName ?? '');
 
   const handleSaveBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -244,6 +310,7 @@ export default function BookingsPage() {
     setFamilyMembers(
       (booking.members ?? []).map((member) => ({
         id: member.id,
+        serialNumber: member.serialNumber,
         fullName: member.fullName,
         gender: member.gender,
         dateOfBirth: member.dateOfBirth ? member.dateOfBirth.slice(0, 10) : '',
@@ -281,11 +348,52 @@ export default function BookingsPage() {
     setShowForm(false);
   };
 
+  const deleteBooking = async (booking: BookingRecord) => {
+    const confirmed = window.confirm(`Delete booking ${booking.bookingCode}?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingBookingId(booking.id);
+    setFormError('');
+
+    try {
+      const response = await fetch('/api/bookings', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: booking.id }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'Unable to delete booking');
+      }
+
+      setBookings((currentBookings) =>
+        currentBookings.filter((currentBooking) => currentBooking.id !== booking.id)
+      );
+
+      if (viewingBooking?.id === booking.id) {
+        setViewingBooking(null);
+      }
+
+      if (editingBooking?.id === booking.id) {
+        closeForm();
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Unable to delete booking');
+    } finally {
+      setDeletingBookingId(null);
+    }
+  };
+
   const addFamilyMember = () => {
     setFamilyMembers((currentMembers) => [
       ...currentMembers,
       {
         id: crypto.randomUUID(),
+        serialNumber: null,
         fullName: '',
         gender: '',
         dateOfBirth: '',
@@ -410,12 +518,20 @@ export default function BookingsPage() {
                 <h3 className="text-2xl font-bold mb-4 text-gray-950">Basic Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Full Name *</Label>
+                    <Label>First Name *</Label>
                     <Input
-                      name="fullName"
-                      placeholder="Traveler's full name"
-                      defaultValue={editingBooking?.travelerName ?? ''}
+                      name="firstName"
+                      placeholder="Traveler's first name"
+                      defaultValue={editingName.firstName}
                       required
+                    />
+                  </div>
+                  <div>
+                    <Label>Last Name</Label>
+                    <Input
+                      name="lastName"
+                      placeholder="Traveler's last name"
+                      defaultValue={editingName.lastName}
                     />
                   </div>
                   <div>
@@ -429,7 +545,7 @@ export default function BookingsPage() {
                   </div>
                   <div>
                     <Label>Gender</Label>
-                    <Select name="gender">
+                    <Select name="gender" defaultValue={editingBooking?.gender ?? ''}>
                       <option value="">Select gender</option>
                       {GENDER_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -440,11 +556,19 @@ export default function BookingsPage() {
                   </div>
                   <div>
                     <Label>Date of Birth</Label>
-                    <Input name="dateOfBirth" type="date" />
+                    <Input
+                      name="dateOfBirth"
+                      type="date"
+                      defaultValue={editingBooking?.dateOfBirth?.slice(0, 10) ?? ''}
+                    />
                   </div>
                   <div>
                     <Label>Address</Label>
-                    <Input name="address" placeholder="Full address" />
+                    <Input
+                      name="address"
+                      placeholder="Full address"
+                      defaultValue={editingBooking?.address ?? ''}
+                    />
                   </div>
                   <div>
                     <Label>Aadhaar Card</Label>
@@ -673,12 +797,16 @@ export default function BookingsPage() {
                   </div>
                   <div>
                     <Label>Pickup Point</Label>
-                    <Input name="pickupPoint" placeholder="e.g., Delhi Airport" />
+                    <Input
+                      name="pickupPoint"
+                      placeholder="e.g., Delhi Airport"
+                      defaultValue={editingBooking?.pickupPoint ?? ''}
+                    />
                   </div>
                 </div>
               </div>
 
-              {!editingBooking && (
+              {(
                 <div>
                   <h3 className="text-2xl font-bold mb-4 text-gray-950">Payment Information</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -781,15 +909,24 @@ export default function BookingsPage() {
                     </div>
                     <div>
                       <Label>Payment Date</Label>
-                      <Input name="paymentDate" type="date" />
+                      <Input
+                        name="paymentDate"
+                        type="date"
+                        defaultValue={editingBooking?.paymentDate?.slice(0, 10) ?? ''}
+                      />
                     </div>
                     <div>
                       <Label>Payment Due Date</Label>
-                      <Input name="dueDate" type="date" required />
+                      <Input
+                        name="dueDate"
+                        type="date"
+                        defaultValue={editingBooking?.dueDate?.slice(0, 10) ?? ''}
+                        required
+                      />
                     </div>
                     <div>
                       <Label>Payment Mode</Label>
-                      <Select name="paymentMode">
+                      <Select name="paymentMode" defaultValue={editingBooking?.paymentMode ?? ''}>
                         <option value="">Select mode</option>
                         {PAYMENT_MODES.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -800,7 +937,11 @@ export default function BookingsPage() {
                     </div>
                     <div>
                       <Label>Transaction ID</Label>
-                      <Input name="transactionId" placeholder="Reference/Transaction ID" />
+                      <Input
+                        name="transactionId"
+                        placeholder="Reference/Transaction ID"
+                        defaultValue={editingBooking?.transactionId ?? ''}
+                      />
                     </div>
                   </div>
                 </div>
@@ -812,11 +953,15 @@ export default function BookingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>PNR</Label>
-                    <Input name="pnr" placeholder="Flight PNR" />
+                    <Input
+                      name="pnr"
+                      placeholder="Flight PNR"
+                      defaultValue={editingBooking?.pnr ?? ''}
+                    />
                   </div>
                   <div>
                     <Label>Flight Status</Label>
-                    <Select name="flightStatus">
+                    <Select name="flightStatus" defaultValue={editingBooking?.flightStatus ?? ''}>
                       <option value="">Select status</option>
                       <option value="pending">Pending</option>
                       <option value="confirmed">Confirmed</option>
@@ -825,7 +970,7 @@ export default function BookingsPage() {
                   </div>
                   <div>
                     <Label>Visa Status</Label>
-                    <Select name="visaStatus">
+                    <Select name="visaStatus" defaultValue={editingBooking?.visaStatus ?? ''}>
                       <option value="">Select status</option>
                       <option value="pending">Pending</option>
                       <option value="approved">Approved</option>
@@ -834,12 +979,26 @@ export default function BookingsPage() {
                   </div>
                   <div>
                     <Label>Hotel Status</Label>
-                    <Select name="hotelStatus">
+                    <Select name="hotelStatus" defaultValue={editingBooking?.hotelStatus ?? ''}>
                       <option value="">Select status</option>
                       <option value="pending">Pending</option>
                       <option value="confirmed">Confirmed</option>
                       <option value="cancelled">Cancelled</option>
                     </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-2xl font-bold mb-4 text-gray-950">Booking Source</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Booked By</Label>
+                    <Input
+                      name="bookedBy"
+                      placeholder="Person or staff name"
+                      defaultValue={editingBooking?.bookedBy ?? ''}
+                    />
                   </div>
                 </div>
               </div>
@@ -874,6 +1033,87 @@ export default function BookingsPage() {
           className="max-w-md"
         />
       </div>
+
+      {viewingBooking && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>{viewingBooking.travelerName}</CardTitle>
+                <CardDescription>{viewingBooking.bookingCode}</CardDescription>
+              </div>
+              <Button type="button" variant="outline" onClick={() => setViewingBooking(null)}>
+                Close
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-sm text-gray-600">Tour</p>
+                <p className="font-medium">{viewingBooking.tour}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Phone</p>
+                <p className="font-medium">{viewingBooking.phone}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Booked By</p>
+                <p className="font-medium">{viewingBooking.bookedBy || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Payment</p>
+                <p className="font-medium">
+                  {formatCurrency(viewingBooking.advancePaid)} paid,{' '}
+                  {formatCurrency(viewingBooking.balance)} balance
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Payment Date</p>
+                <p className="font-medium">
+                  {viewingBooking.paymentDate
+                    ? viewingBooking.paymentDate.slice(0, 10)
+                    : '-'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Room Preferences</p>
+                <p className="font-medium">{viewingBooking.roomSharing || '-'}</p>
+              </div>
+            </div>
+
+            {viewingBooking.members.length > 0 && (
+              <div className="mt-6">
+                <h3 className="mb-3 font-semibold">Family / Group Members</h3>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Serial No</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Relation</TableHead>
+                        <TableHead>Gender</TableHead>
+                        <TableHead>Phone</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {viewingBooking.members.map((member) => (
+                        <TableRow key={member.id}>
+                          <TableCell>{member.serialNumber ?? '-'}</TableCell>
+                          <TableCell>{member.fullName}</TableCell>
+                          <TableCell>{member.relation || '-'}</TableCell>
+                          <TableCell>{member.gender || '-'}</TableCell>
+                          <TableCell>{member.phone || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bookings Table */}
       <Card>
@@ -926,7 +1166,12 @@ export default function BookingsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" title="View">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="View"
+                          onClick={() => setViewingBooking(booking)}
+                        >
                           <Eye size={16} />
                         </Button>
                         <Button
@@ -937,7 +1182,13 @@ export default function BookingsPage() {
                         >
                           <Edit2 size={16} />
                         </Button>
-                        <Button size="sm" variant="ghost" title="Delete">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Delete"
+                          disabled={deletingBookingId === booking.id}
+                          onClick={() => deleteBooking(booking)}
+                        >
                           <Trash2 size={16} className="text-red-600" />
                         </Button>
                       </div>

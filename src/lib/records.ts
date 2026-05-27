@@ -76,6 +76,7 @@ export async function getTourDetails(id: string) {
       return {
         id: booking.id,
         bookingCode: booking.bookingCode,
+        bookedBy: booking.bookedBy ?? '',
         status: booking.status,
         pickupPoint: booking.pickupPoint ?? '',
         seatNumber: booking.seatNumber ?? '',
@@ -83,6 +84,7 @@ export async function getTourDetails(id: string) {
         createdAt: booking.createdAt.toISOString(),
         traveler: {
           id: booking.traveler.id,
+          serialNumber: booking.traveler.serialNumber,
           fullName: booking.traveler.fullName,
           phone: booking.traveler.phone,
           email: booking.traveler.email ?? '',
@@ -93,20 +95,28 @@ export async function getTourDetails(id: string) {
           state: booking.traveler.state ?? '',
           postalCode: booking.traveler.postalCode ?? '',
         },
-        members: booking.members.map((member) => ({
-          id: member.id,
-          fullName: member.fullName,
-          gender: member.gender ?? '',
-          dateOfBirth: member.dateOfBirth?.toISOString() ?? null,
-          phone: member.phone ?? '',
-          email: member.email ?? '',
-          relation: member.relation ?? '',
-        })),
+        members: booking.members
+          .map((member) => ({
+            id: member.id,
+            serialNumber: member.serialNumber ?? null,
+            fullName: member.fullName,
+            gender: member.gender ?? '',
+            dateOfBirth: member.dateOfBirth?.toISOString() ?? null,
+            phone: member.phone ?? '',
+            email: member.email ?? '',
+            relation: member.relation ?? '',
+          }))
+          .sort(
+            (first, second) =>
+              (first.serialNumber ?? Number.MAX_SAFE_INTEGER) -
+              (second.serialNumber ?? Number.MAX_SAFE_INTEGER)
+          ),
         payment: {
           totalAmount: payment?.totalAmount ?? tour.packagePrice,
           advancePaid: payment?.advancePaid ?? 0,
           balanceAmount: payment?.balanceAmount ?? tour.packagePrice,
           status: payment?.status ?? 'pending',
+          paymentDate: payment?.paymentDate?.toISOString() ?? null,
           dueDate: payment?.dueDate.toISOString() ?? null,
           paymentMode: payment?.paymentMode ?? '',
         },
@@ -126,7 +136,7 @@ export async function getTourDetails(id: string) {
           authenticationStatus: booking.operationsStatus?.authenticationStatus ?? 'pending',
         },
       };
-    }),
+    }).sort((first, second) => first.traveler.serialNumber - second.traveler.serialNumber),
   };
 }
 
@@ -136,6 +146,7 @@ export async function getBookings() {
       tour: true,
       traveler: true,
       members: true,
+      operationsStatus: true,
       payments: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
     orderBy: { createdAt: 'desc' },
@@ -147,25 +158,45 @@ export async function getBookings() {
     return {
       id: booking.id,
       bookingCode: booking.bookingCode,
+      bookedBy: booking.bookedBy ?? '',
       travelerName: booking.traveler.fullName,
       tour: booking.tour.tourName,
       phone: booking.traveler.phone,
       email: booking.traveler.email ?? '',
+      gender: booking.traveler.gender ?? '',
+      dateOfBirth: booking.traveler.dateOfBirth?.toISOString() ?? '',
+      address: booking.traveler.address ?? '',
       memberCount: booking.members.length,
-      members: booking.members.map((member) => ({
-        id: member.id,
-        fullName: member.fullName,
-        gender: member.gender ?? '',
-        dateOfBirth: member.dateOfBirth?.toISOString() ?? '',
-        phone: member.phone ?? '',
-        email: member.email ?? '',
-        relation: member.relation ?? '',
-      })),
+      members: booking.members
+        .map((member) => ({
+          id: member.id,
+          serialNumber: member.serialNumber ?? null,
+          fullName: member.fullName,
+          gender: member.gender ?? '',
+          dateOfBirth: member.dateOfBirth?.toISOString() ?? '',
+          phone: member.phone ?? '',
+          email: member.email ?? '',
+          relation: member.relation ?? '',
+        }))
+        .sort(
+          (first, second) =>
+            (first.serialNumber ?? Number.MAX_SAFE_INTEGER) -
+            (second.serialNumber ?? Number.MAX_SAFE_INTEGER)
+        ),
       seat: booking.seatNumber ?? '',
       roomSharing: booking.roomSharingPreference ?? '',
+      pickupPoint: booking.pickupPoint ?? '',
       totalAmount: payment?.totalAmount ?? booking.tour.packagePrice,
       advancePaid: payment?.advancePaid ?? 0,
       balance: payment?.balanceAmount ?? booking.tour.packagePrice,
+      paymentDate: payment?.paymentDate?.toISOString() ?? '',
+      dueDate: payment?.dueDate.toISOString() ?? '',
+      paymentMode: payment?.paymentMode ?? '',
+      transactionId: payment?.transactionId ?? '',
+      pnr: booking.operationsStatus?.pnr ?? '',
+      flightStatus: booking.operationsStatus?.flightStatus ?? '',
+      visaStatus: booking.operationsStatus?.visaStatus ?? '',
+      hotelStatus: booking.operationsStatus?.hotelStatus ?? '',
       paymentStatus: payment?.status ?? 'pending',
       status: booking.status,
     };

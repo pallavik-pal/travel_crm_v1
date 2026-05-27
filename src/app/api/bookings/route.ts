@@ -17,6 +17,10 @@ const cleanFamilyMembers = (members: unknown) => {
         (member as Record<string, string>).fullName.trim().length > 0
     )
     .map((member) => ({
+      serialNumber:
+        typeof member.serialNumber === 'number'
+          ? member.serialNumber
+          : Number(member.serialNumber) || null,
       fullName: member.fullName.trim(),
       gender: member.gender || null,
       dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth) : null,
@@ -24,6 +28,23 @@ const cleanFamilyMembers = (members: unknown) => {
       email: member.email || null,
       relation: member.relation || null,
     }));
+};
+
+const getFullName = (body: Record<string, unknown>) => {
+  const firstName = typeof body.firstName === 'string' ? body.firstName.trim() : '';
+  const lastName = typeof body.lastName === 'string' ? body.lastName.trim() : '';
+  const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
+
+  return [firstName, lastName].filter(Boolean).join(' ') || fullName;
+};
+
+const getNextSerialNumber = async () => {
+  const [travelerCount, memberCount] = await Promise.all([
+    prisma.traveler.count(),
+    prisma.bookingMember.count(),
+  ]);
+
+  return travelerCount + memberCount + 1;
 };
 
 const serializeRoomPreferences = (rooms: unknown) => {
@@ -99,10 +120,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = await request.json();
+  const fullName = getFullName(body);
 
-  if (!body.fullName || !body.phone || !body.tourId || !body.totalAmount || !body.advancePaid) {
+  if (!fullName || !body.phone || !body.tourId || !body.totalAmount || !body.advancePaid) {
     return NextResponse.json(
-      { error: 'Full name, phone, tour, total amount, and advance paid are required' },
+      { error: 'First name, phone, tour, total amount, and advance paid are required' },
       { status: 400 }
     );
   }
@@ -119,11 +141,11 @@ export async function POST(request: Request) {
   const advancePaid = Number(body.advancePaid);
   const balanceAmount = Math.max(totalAmount - advancePaid, 0);
 
-  const travelerCount = await prisma.traveler.count();
+  const firstSerialNumber = await getNextSerialNumber();
   const traveler = await prisma.traveler.create({
     data: {
-      serialNumber: travelerCount + 1,
-      fullName: body.fullName,
+      serialNumber: firstSerialNumber,
+      fullName,
       phone: body.phone,
       email: body.email || null,
       gender: body.gender || null,
@@ -137,6 +159,7 @@ export async function POST(request: Request) {
       bookingCode: generateBookingCode(),
       tourId: tour.id,
       travelerId: traveler.id,
+      bookedBy: body.bookedBy || null,
       pickupPoint: body.pickupPoint || null,
       seatNumber: body.seatNumber || null,
       roomSharingPreference: serializeRoomPreferences(body.roomPreferences),
@@ -148,9 +171,10 @@ export async function POST(request: Request) {
 
   if (familyMembers.length > 0) {
     await prisma.bookingMember.createMany({
-      data: familyMembers.map((member) => ({
+      data: familyMembers.map((member, index) => ({
         bookingId: booking.id,
         ...member,
+        serialNumber: firstSerialNumber + index + 1,
       })),
     });
   }
@@ -192,6 +216,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const body = await request.json();
+  const fullName = getFullName(body);
 
   if (!body.id) {
     return NextResponse.json({ error: 'Booking id is required' }, { status: 400 });
@@ -221,7 +246,7 @@ export async function PATCH(request: Request) {
   await prisma.traveler.update({
     where: { id: booking.travelerId },
     data: {
-      fullName: body.fullName || booking.traveler.fullName,
+      fullName: fullName || booking.traveler.fullName,
       phone: body.phone || booking.traveler.phone,
       email: body.email || null,
       gender: body.gender || null,
@@ -234,12 +259,44 @@ export async function PATCH(request: Request) {
     where: { id: booking.id },
     data: {
       tourId: body.tourId || booking.tourId,
+      bookedBy: body.bookedBy || null,
       pickupPoint: body.pickupPoint || null,
       seatNumber: body.seatNumber || null,
       roomSharingPreference: serializeRoomPreferences(body.roomPreferences),
       status: body.status || booking.status,
     },
   });
+
+  const payment = booking.payments[0];
+  const totalAmount = Number(body.totalAmount ?? payment?.totalAmount ?? 0);
+  const advancePaid = Number(body.advancePaid ?? payment?.advancePaid ?? 0);
+  const balanceAmount = Math.max(totalAmount - advancePaid, 0);
+  const paymentStatus =
+    balanceAmount === 0 ? 'paid' : advancePaid > 0 ? 'partial' : 'pending';
+  const paymentData = {
+    totalAmount,
+    advancePaid,
+    balanceAmount,
+    status: paymentStatus,
+    paymentDate: body.paymentDate ? new Date(body.paymentDate) : null,
+    dueDate: body.dueDate ? new Date(body.dueDate) : payment?.dueDate ?? new Date(),
+    paymentMode: body.paymentMode || payment?.paymentMode || 'cash',
+    transactionId: body.transactionId || null,
+  };
+
+  if (payment) {
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: paymentData,
+    });
+  } else {
+    await prisma.payment.create({
+      data: {
+        bookingId: booking.id,
+        ...paymentData,
+      },
+    });
+  }
 
   if (booking.operationsStatus) {
     await prisma.operationsStatus.update({
@@ -269,10 +326,12 @@ export async function PATCH(request: Request) {
   });
 
   if (familyMembers.length > 0) {
+    let nextSerialNumber = await getNextSerialNumber();
     await prisma.bookingMember.createMany({
       data: familyMembers.map((member) => ({
         bookingId: booking.id,
         ...member,
+        serialNumber: member.serialNumber ?? nextSerialNumber++,
       })),
     });
   }
@@ -281,4 +340,28 @@ export async function PATCH(request: Request) {
 
   const savedBooking = (await getBookings()).find((item) => item.id === booking.id);
   return NextResponse.json(savedBooking);
+}
+
+export async function DELETE(request: Request) {
+  const body = await request.json();
+
+  if (!body.id) {
+    return NextResponse.json({ error: 'Booking id is required' }, { status: 400 });
+  }
+
+  const booking = await prisma.booking.findUnique({
+    where: { id: body.id },
+  });
+
+  if (!booking) {
+    return NextResponse.json({ error: 'Booking was not found' }, { status: 404 });
+  }
+
+  await prisma.operationsStatus.deleteMany({ where: { bookingId: booking.id } });
+  await prisma.payment.deleteMany({ where: { bookingId: booking.id } });
+  await prisma.document.deleteMany({ where: { bookingId: booking.id } });
+  await prisma.bookingMember.deleteMany({ where: { bookingId: booking.id } });
+  await prisma.booking.delete({ where: { id: booking.id } });
+
+  return NextResponse.json({ id: booking.id });
 }
