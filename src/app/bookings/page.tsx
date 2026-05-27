@@ -148,8 +148,8 @@ const parseRoomPreferences = (roomSharing: string): RoomPreferenceForm[] => {
 };
 
 export default function BookingsPage() {
-  const [bookings, setBookings] = useRecords('/api/bookings', mockBookings);
-  const [tours] = useRecords('/api/tours', mockTours);
+  const [bookings, setBookings] = useRecords('/api/bookings', [] as typeof mockBookings);
+  const [tours] = useRecords('/api/tours', [] as typeof mockTours);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);

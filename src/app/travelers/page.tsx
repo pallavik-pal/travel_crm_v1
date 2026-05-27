@@ -94,7 +94,7 @@ const mockTravelers = [
 ];
 
 export default function TravelersPage() {
-  const [travelers] = useRecords('/api/travelers', mockTravelers);
+  const [travelers] = useRecords('/api/travelers', [] as typeof mockTravelers);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTour, setFilterTour] = useState('');
 

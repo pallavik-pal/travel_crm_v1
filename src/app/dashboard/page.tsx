@@ -124,6 +124,19 @@ const mockDashboard = {
   pendingDocuments: mockPendingDocuments,
 };
 
+const emptyDashboard: typeof mockDashboard = {
+  stats: {
+    totalTours: 0,
+    activeTravelers: 0,
+    pendingPayments: 0,
+    upcomingDepartures: 0,
+  },
+  tours: [],
+  pendingPayments: [],
+  operationAlerts: [],
+  pendingDocuments: [],
+};
+
 const StatCard = ({
   title,
   value,
@@ -151,7 +164,7 @@ const StatCard = ({
 );
 
 function DashboardContent() {
-  const [dashboard] = useRecords('/api/dashboard', mockDashboard);
+  const [dashboard] = useRecords('/api/dashboard', emptyDashboard);
 
   return (
     <div className="space-y-6">

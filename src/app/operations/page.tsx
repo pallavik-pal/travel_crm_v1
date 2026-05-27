@@ -58,14 +58,22 @@ const mockTours = [
   },
 ];
 
+const emptyTour: (typeof mockTours)[number] = {
+  id: '',
+  name: '',
+  departure: '',
+  travelers: [],
+  rooms: [],
+};
+
 export default function OperationsPage() {
-  const [tours, setTours] = useRecords('/api/operations', mockTours);
-  const [selectedTourId, setSelectedTourId] = useState(String(mockTours[0].id));
+  const [tours, setTours] = useRecords('/api/operations', [] as typeof mockTours);
+  const [selectedTourId, setSelectedTourId] = useState('');
   const [showRoomForm, setShowRoomForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const selectedTour =
-    tours.find((tour) => String(tour.id) === selectedTourId) ?? tours[0] ?? mockTours[0];
+    tours.find((tour) => String(tour.id) === selectedTourId) ?? tours[0] ?? emptyTour;
 
   const handleAddRoom = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -278,4 +286,3 @@ export default function OperationsPage() {
     </MainLayout>
   );
 }
-

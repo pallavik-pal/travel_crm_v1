@@ -59,7 +59,7 @@ const mockDocuments = [
 ];
 
 export default function DocumentsPage() {
-  const [documents, setDocuments] = useRecords('/api/documents', mockDocuments);
+  const [documents, setDocuments] = useRecords('/api/documents', [] as typeof mockDocuments);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');

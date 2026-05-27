@@ -71,7 +71,7 @@ const mockTours = [
 ];
 
 export default function ToursPage() {
-  const [tours, setTours] = useRecords('/api/tours', mockTours);
+  const [tours, setTours] = useRecords('/api/tours', [] as typeof mockTours);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);

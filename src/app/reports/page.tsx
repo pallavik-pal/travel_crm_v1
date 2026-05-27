@@ -115,7 +115,12 @@ const mockReports = {
 
 
 export default function ReportsPage() {
-  const [reports] = useRecords('/api/reports', mockReports);
+  const [reports] = useRecords('/api/reports', {
+    tourWiseRevenue: [],
+    pendingPayments: [],
+    seatOccupancy: [],
+    profitability: [],
+  } as typeof mockReports);
   const [selectedReport, setSelectedReport] = useState('revenue');
   const [dateRange, setDateRange] = useState('all');
   const generateExcel = () => {
