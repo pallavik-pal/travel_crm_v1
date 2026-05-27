@@ -23,6 +23,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import { Archive, Edit2, Eye, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 
 const mockTours = [
@@ -244,7 +245,12 @@ export default function ToursPage() {
                     <TableRow key={tour.id}>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{tour.tourName}</p>
+                          <Link
+                            href={`/tours/${tour.id}`}
+                            className="font-medium hover:text-blue-600 hover:underline"
+                          >
+                            {tour.tourName}
+                          </Link>
                           <p className="text-sm text-gray-600">{tour.tourCode}</p>
                         </div>
                       </TableCell>
@@ -277,8 +283,10 @@ export default function ToursPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button size="sm" variant="ghost">
-                            <Eye size={16} />
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link href={`/tours/${tour.id}`} aria-label={`View ${tour.tourName}`}>
+                              <Eye size={16} />
+                            </Link>
                           </Button>
                           <Button size="sm" variant="ghost">
                             <Edit2 size={16} />
