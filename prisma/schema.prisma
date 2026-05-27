@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  name      String
+  role      String   @default("staff")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AppSetting {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationName   String
+  defaultCurrency    String   @default("INR")
+  timezone           String   @default("IST")
+  emailNotifications Boolean  @default(true)
+  smsAlerts          Boolean  @default(true)
+  dailySummaryReport Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Tour {
+  id                String                      @id @default(auto()) @map("_id") @db.ObjectId
+  tourName          String
+  tourCode          String                      @unique
+  destination       String
+  departureDate     DateTime
+  returnDate        DateTime
+  totalSeats        Int
+  packagePrice      Int
+  pickupCity        String
+  tourManager       String
+  status            String                      @default("draft")
+  costEstimate      Int                         @default(0)
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  bookings          Booking[]
+  rooms             RoomAllocation[]
+  paymentCategories OperationsPaymentCategory[]
+}
+
+model Traveler {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  serialNumber Int       @unique
+  fullName     String
+  gender       String?
+  dateOfBirth  DateTime?
+  phone        String
+  email        String?
+  address      String?
+  city         String?
+  state        String?
+  postalCode   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  bookings     Booking[]
+}
+
+model Booking {
+  id                    String            @id @default(auto()) @map("_id") @db.ObjectId
+  bookingCode           String            @unique
+  tourId                String            @db.ObjectId
+  travelerId            String            @db.ObjectId
+  pickupPoint           String?
+  seatNumber            String?
+  roomSharingPreference String?
+  status                String            @default("pending")
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  tour                  Tour              @relation(fields: [tourId], references: [id])
+  traveler              Traveler          @relation(fields: [travelerId], references: [id])
+  members               BookingMember[]
+  documents             Document[]
+  payments              Payment[]
+  operationsStatus      OperationsStatus?
+}
+
+model BookingMember {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId   String    @db.ObjectId
+  fullName    String
+  gender      String?
+  dateOfBirth DateTime?
+  phone       String?
+  email       String?
+  relation    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  booking     Booking   @relation(fields: [bookingId], references: [id])
+}
+
+model Document {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId  String    @db.ObjectId
+  type       String
+  url        String
+  fileName   String
+  uploadedAt DateTime  @default(now())
+  expiryDate DateTime?
+  status     String    @default("pending")
+  booking    Booking   @relation(fields: [bookingId], references: [id])
+}
+
+model Payment {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId     String    @db.ObjectId
+  totalAmount   Int
+  advancePaid   Int
+  balanceAmount Int
+  status        String
+  paymentDate   DateTime?
+  dueDate       DateTime
+  paymentMode   String
+  transactionId String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  booking       Booking   @relation(fields: [bookingId], references: [id])
+}
+
+model OperationsStatus {
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId            String    @unique @db.ObjectId
+  pnr                  String?
+  flightStatus         String    @default("not_required")
+  visaStatus           String    @default("not_required")
+  hotelStatus          String    @default("pending")
+  ticketIssued         Boolean   @default(false)
+  ticketAirline        String?
+  ticketFlightNumber   String?
+  ticketDepartureTime  DateTime?
+  ticketArrivalTime    DateTime?
+  busTrainDetails      String?
+  authenticationStatus String    @default("pending")
+  lastUpdated          DateTime  @updatedAt
+  booking              Booking   @relation(fields: [bookingId], references: [id])
+}
+
+model RoomAllocation {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  tourId     String  @db.ObjectId
+  roomNumber String
+  capacity   Int
+  occupants  String
+  notes      String?
+  tour       Tour    @relation(fields: [tourId], references: [id])
+}
+
+model OperationsPaymentCategory {
+  id           String                 @id @default(auto()) @map("_id") @db.ObjectId
+  tourId       String                 @db.ObjectId
+  categoryName String
+  totalAmount  Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  tour         Tour                   @relation(fields: [tourId], references: [id])
+  paymentLogs  OperationsPaymentLog[]
+
+  @@unique([tourId, categoryName])
+}
+
+model OperationsPaymentLog {
+  id         String                    @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId String                    @db.ObjectId
+  amountPaid Int
+  utrNumber  String
+  createdAt  DateTime                  @default(now())
+  category   OperationsPaymentCategory @relation(fields: [categoryId], references: [id])
+}
