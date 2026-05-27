@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TravelCRM - Group Tour Operations",
+  title: "Prapancha Pravasa Tours ",
   description: "Modern CRM for managing group tours, bookings, payments, and operations",
 };
 

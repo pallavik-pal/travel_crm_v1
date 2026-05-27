@@ -92,8 +92,8 @@ export function Sidebar() {
         } lg:translate-x-0 fixed left-0 top-0 z-40 w-64 h-screen bg-gray-900 text-white transition-transform duration-300 overflow-y-auto`}
       >
         <div className="p-6">
-          <h1 className="text-2xl font-bold">TravelCRM</h1>
-          <p className="text-sm text-gray-400 mt-1">Group Tour Ops</p>
+          <h1 className="text-2xl font-bold">Prapancha Pravasa Tours Private Limited</h1>
+          <p className="text-sm text-gray-400 mt-1">Tour Operation CRM</p>
         </div>
 
         <nav className="space-y-2 p-4">
