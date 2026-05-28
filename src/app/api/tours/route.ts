@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     'returnDate',
     'totalSeats',
     'packagePrice',
+    'childPrice',
     'pickupCity',
     'tourManager',
   ];
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
       returnDate: new Date(body.returnDate),
       totalSeats: Number(body.totalSeats),
       packagePrice: Number(body.packagePrice),
+      childPrice: Number(body.childPrice),
       pickupCity: body.pickupCity,
       tourManager: body.tourManager,
       status: body.status ?? 'draft',
@@ -56,6 +58,7 @@ export async function POST(request: Request) {
       totalSeats: tour.totalSeats,
       occupiedSeats: tour.bookings.length,
       packagePrice: tour.packagePrice,
+      childPrice: tour.childPrice || tour.packagePrice,
       pickupCity: tour.pickupCity,
       tourManager: tour.tourManager,
       status: tour.status,

@@ -37,6 +37,7 @@ const mockTours = [
     totalSeats: 40,
     occupiedSeats: 35,
     packagePrice: 45000,
+    childPrice: 30000,
     pickupCity: 'Delhi',
     tourManager: 'Rajesh Kumar',
     status: 'active',
@@ -51,6 +52,7 @@ const mockTours = [
     totalSeats: 30,
     occupiedSeats: 12,
     packagePrice: 35000,
+    childPrice: 25000,
     pickupCity: 'Delhi',
     tourManager: 'Priya Singh',
     status: 'draft',
@@ -65,6 +67,7 @@ const mockTours = [
     totalSeats: 20,
     occupiedSeats: 8,
     packagePrice: 55000,
+    childPrice: 40000,
     pickupCity: 'Mumbai',
     tourManager: 'Amit Patel',
     status: 'draft',
@@ -179,8 +182,12 @@ export default function ToursPage() {
                   <Input name="totalSeats" type="number" min="1" placeholder="40" required />
                 </div>
                 <div>
-                  <Label>Package Price (INR)</Label>
+                  <Label>Adult Price Per Person (INR)</Label>
                   <Input name="packagePrice" type="number" min="0" placeholder="45000" required />
+                </div>
+                <div>
+                  <Label>Child Price Per Person (INR)</Label>
+                  <Input name="childPrice" type="number" min="1" placeholder="30000" required />
                 </div>
                 <div>
                   <Label>Pickup City</Label>
@@ -274,7 +281,12 @@ export default function ToursPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>{formatCurrency(tour.packagePrice)}</TableCell>
+                      <TableCell>
+                        <div className="space-y-1 text-sm">
+                          <p>Adult: {formatCurrency(tour.packagePrice)}</p>
+                          <p>Child: {formatCurrency(tour.childPrice ?? 0)}</p>
+                        </div>
+                      </TableCell>
                       <TableCell>{tour.tourManager}</TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(tour.status)}>

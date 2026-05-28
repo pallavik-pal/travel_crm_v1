@@ -25,6 +25,20 @@ import { Eye, Download, Trash2, Upload } from 'lucide-react';
 import { formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 
+const readJsonResponse = async (response: Response) => {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(response.ok ? 'The server returned an invalid response' : text);
+  }
+};
+
 const mockDocuments = [
   {
     id: 1,
@@ -75,24 +89,35 @@ export default function DocumentsPage() {
     const form = event.currentTarget;
     const formData = new FormData(form);
     const file = formData.get('file');
-    const payload = {
-      ...Object.fromEntries(formData.entries()),
-      fileName: file instanceof File ? file.name : '',
-    };
+
+    if (file instanceof File && file.name) {
+      formData.set('fileName', file.name);
+    }
 
     try {
       const response = await fetch('/api/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: formData,
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error ?? 'Unable to upload document');
       }
 
-      setDocuments((currentDocuments) => [data, ...currentDocuments]);
+      if (!data?.id) {
+        throw new Error('Document was saved, but the server did not return the saved document.');
+      }
+
+      const documentsResponse = await fetch('/api/documents', { cache: 'no-store' });
+      const latestDocuments = await readJsonResponse(documentsResponse);
+
+      if (!documentsResponse.ok || !Array.isArray(latestDocuments)) {
+        throw new Error('Document was saved, but the document list could not be refreshed.');
+      }
+
+      setDocuments(latestDocuments);
+      setSearchQuery('');
       form.reset();
       setShowUploadForm(false);
     } catch (error) {
@@ -169,6 +194,11 @@ export default function DocumentsPage() {
                 <div>
                   <Label>Booking Code</Label>
                   <Input name="bookingCode" placeholder="BK-202505-ABC123" required />
+                </div>
+
+                <div>
+                  <Label>Passenger Name</Label>
+                  <Input name="passengerName" placeholder="Traveler or family member name" />
                 </div>
 
                 <div>
@@ -334,11 +364,19 @@ export default function DocumentsPage() {
 
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost">
-                          <Eye size={16} />
+                        <Button size="sm" variant="ghost" asChild title="View document">
+                          <a
+                            href={`/api/documents/${doc.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Eye size={16} />
+                          </a>
                         </Button>
-                        <Button size="sm" variant="ghost">
-                          <Download size={16} />
+                        <Button size="sm" variant="ghost" asChild title="Download document">
+                          <a href={`/api/documents/${doc.id}?download=1`}>
+                            <Download size={16} />
+                          </a>
                         </Button>
                         <Button size="sm" variant="ghost">
                           <Trash2 size={16} className="text-red-600" />

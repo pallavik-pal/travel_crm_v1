@@ -1,5 +1,15 @@
 import { prisma } from '@/lib/db';
 
+const documentMetadataSelect = {
+  id: true,
+  type: true,
+  fileName: true,
+  passengerName: true,
+  uploadedAt: true,
+  expiryDate: true,
+  status: true,
+} as const;
+
 export async function getTours() {
   const tours = await prisma.tour.findMany({
     include: { bookings: { include: { members: true } } },
@@ -19,6 +29,7 @@ export async function getTours() {
       0
     ),
     packagePrice: tour.packagePrice,
+    childPrice: tour.childPrice || tour.packagePrice,
     pickupCity: tour.pickupCity,
     tourManager: tour.tourManager,
     status: tour.status,
@@ -34,7 +45,7 @@ export async function getTourDetails(id: string) {
         include: {
           traveler: true,
           members: true,
-          documents: true,
+          documents: { select: documentMetadataSelect },
           operationsStatus: true,
           payments: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
@@ -60,6 +71,7 @@ export async function getTourDetails(id: string) {
       0
     ),
     packagePrice: tour.packagePrice,
+    childPrice: tour.childPrice || tour.packagePrice,
     pickupCity: tour.pickupCity,
     tourManager: tour.tourManager,
     status: tour.status,
@@ -146,6 +158,7 @@ export async function getBookings() {
       tour: true,
       traveler: true,
       members: true,
+      documents: { select: documentMetadataSelect },
       operationsStatus: true,
       payments: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
@@ -154,6 +167,34 @@ export async function getBookings() {
 
   return bookings.map((booking) => {
     const payment = booking.payments[0];
+    const usedDocumentIds = new Set<string>();
+    const documentFileName = (passengerName: string, type: string, useLegacyFallback = false) => {
+      const exactDocument = booking.documents.find(
+        (document) =>
+          !usedDocumentIds.has(document.id) &&
+          document.type === type &&
+          document.passengerName === passengerName
+      );
+
+      if (exactDocument) {
+        usedDocumentIds.add(exactDocument.id);
+        return exactDocument.fileName;
+      }
+
+      const fallbackDocument = booking.documents.find(
+        (document) =>
+          !usedDocumentIds.has(document.id) &&
+          document.type === type &&
+          (useLegacyFallback || !document.passengerName)
+      );
+
+      if (fallbackDocument) {
+        usedDocumentIds.add(fallbackDocument.id);
+        return fallbackDocument.fileName;
+      }
+
+      return '';
+    };
 
     return {
       id: booking.id,
@@ -166,6 +207,9 @@ export async function getBookings() {
       gender: booking.traveler.gender ?? '',
       dateOfBirth: booking.traveler.dateOfBirth?.toISOString() ?? '',
       address: booking.traveler.address ?? '',
+      aadhaarFileName: documentFileName(booking.traveler.fullName, 'aadhaar', true),
+      panFileName: documentFileName(booking.traveler.fullName, 'pan', true),
+      passportFileName: documentFileName(booking.traveler.fullName, 'passport', true),
       memberCount: booking.members.length,
       members: booking.members
         .map((member) => ({
@@ -177,6 +221,9 @@ export async function getBookings() {
           phone: member.phone ?? '',
           email: member.email ?? '',
           relation: member.relation ?? '',
+          aadhaarFileName: documentFileName(member.fullName, 'aadhaar', true),
+          panFileName: documentFileName(member.fullName, 'pan', true),
+          passportFileName: documentFileName(member.fullName, 'passport', true),
         }))
         .sort(
           (first, second) =>
@@ -209,7 +256,7 @@ export async function getTravelers() {
       bookings: {
         include: {
           tour: true,
-          documents: true,
+          documents: { select: documentMetadataSelect },
           payments: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
       },
@@ -270,9 +317,10 @@ export async function getPayments() {
 
 export async function getDocuments() {
   const documents = await prisma.document.findMany({
-    include: {
+    select: {
+      ...documentMetadataSelect,
       booking: {
-        include: {
+        select: {
           tour: true,
           traveler: true,
         },
@@ -283,7 +331,7 @@ export async function getDocuments() {
 
   return documents.map((document) => ({
     id: document.id,
-    travelerName: document.booking.traveler.fullName,
+    travelerName: document.passengerName ?? document.booking.traveler.fullName,
     type: document.type,
     fileName: document.fileName,
     uploadedAt: document.uploadedAt.toISOString(),

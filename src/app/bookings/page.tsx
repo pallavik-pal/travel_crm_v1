@@ -38,6 +38,9 @@ type BookingRecord = {
   gender: string;
   dateOfBirth: string;
   address: string;
+  aadhaarFileName?: string;
+  panFileName?: string;
+  passportFileName?: string;
   memberCount: number;
   members: BookingMemberRecord[];
   seat: string;
@@ -154,6 +157,8 @@ const mockBookings: BookingRecord[] = [
 type FamilyMemberForm = {
   id: string;
   serialNumber?: number | null;
+  firstName: string;
+  lastName: string;
   fullName: string;
   gender: string;
   dateOfBirth: string;
@@ -165,15 +170,21 @@ type FamilyMemberForm = {
   passportFileName: string;
 };
 
+type DocumentNames = {
+  aadhaarFileName: string;
+  panFileName: string;
+  passportFileName: string;
+};
+
 type RoomPreferenceForm = {
   id: string;
   preferenceType: string;
 };
 
 const mockTours = [
-  { id: 'thailand', tourName: 'Thailand May Batch' },
-  { id: 'kashmir', tourName: 'Kashmir June Batch' },
-  { id: 'dubai', tourName: 'Dubai July Batch' },
+  { id: 'thailand', tourName: 'Thailand May Batch', packagePrice: 45000, childPrice: 30000 },
+  { id: 'kashmir', tourName: 'Kashmir June Batch', packagePrice: 35000, childPrice: 25000 },
+  { id: 'dubai', tourName: 'Dubai July Batch', packagePrice: 55000, childPrice: 40000 },
 ];
 
 const parseRoomPreferences = (roomSharing: string): RoomPreferenceForm[] => {
@@ -210,6 +221,23 @@ const splitName = (name: string) => {
   };
 };
 
+const getFullName = (firstName: string, lastName: string) =>
+  [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
+
+const readJsonResponse = async (response: Response) => {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(response.ok ? 'The server returned an invalid response' : text);
+  }
+};
+
 export default function BookingsPage() {
   const [bookings, setBookings] = useRecords('/api/bookings', [] as typeof mockBookings);
   const [tours] = useRecords('/api/tours', [] as typeof mockTours);
@@ -223,17 +251,21 @@ export default function BookingsPage() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberForm[]>([]);
   const [roomPreferences, setRoomPreferences] = useState<RoomPreferenceForm[]>([]);
   const [advancePaidInput, setAdvancePaidInput] = useState('');
+  const [selectedTourId, setSelectedTourId] = useState('');
   const [adultCount, setAdultCount] = useState(1);
   const [childCount, setChildCount] = useState(0);
-  const [adultPrice, setAdultPrice] = useState('');
-  const [childPrice, setChildPrice] = useState('');
-  const [discountPerPerson, setDiscountPerPerson] = useState('');
+  const [documentNames, setDocumentNames] = useState<DocumentNames>({
+    aadhaarFileName: '',
+    panFileName: '',
+    passportFileName: '',
+  });
 
-  const totalPassengersForPrice = adultCount + childCount;
-  const grossAmount =
-    adultCount * Number(adultPrice || 0) + childCount * Number(childPrice || 0);
-  const discountAmount = totalPassengersForPrice * Number(discountPerPerson || 0);
-  const calculatedTotalAmount = Math.max(grossAmount - discountAmount, 0);
+  const selectedTour =
+    tours.find((tour) => tour.id === selectedTourId) ??
+    tours.find((tour) => tour.tourName === editingBooking?.tour);
+  const calculatedTotalAmount =
+    adultCount * Number(selectedTour?.packagePrice ?? 0) +
+    childCount * Number(selectedTour?.childPrice ?? 0);
 
   const calculatedBalance = Math.max(
     calculatedTotalAmount - Number(advancePaidInput || 0),
@@ -259,44 +291,91 @@ export default function BookingsPage() {
       return;
     }
 
+    const mainDocuments = {
+      aadhaar: fileName('aadhaar') || documentNames.aadhaarFileName,
+      pan: fileName('pan') || documentNames.panFileName,
+      passport: fileName('passport') || documentNames.passportFileName,
+    };
+    const missingMainDocument = Object.entries(mainDocuments).find(([, value]) => !value);
+
+    if (missingMainDocument) {
+      setFormError('Aadhaar, PAN, and Passport are required for the main passenger.');
+      setIsSaving(false);
+      return;
+    }
+
+    const memberMissingDocuments = familyMembers.find(
+      (member) =>
+        !member.aadhaarFileName || !member.panFileName || !member.passportFileName
+    );
+
+    if (memberMissingDocuments) {
+      const memberName =
+        getFullName(memberMissingDocuments.firstName, memberMissingDocuments.lastName) ||
+        'each family member';
+      setFormError(`Aadhaar, PAN, and Passport are required for ${memberName}.`);
+      setIsSaving(false);
+      return;
+    }
+
     const payload = {
-      ...Object.fromEntries(formData.entries()),
-      id: editingBooking?.id,
-      familyMembers,
+      id: editingBooking?.id ?? '',
+      familyMembers: familyMembers.map((member) => ({
+        ...member,
+        fullName: getFullName(member.firstName, member.lastName),
+        aadhaarFileField: `family-${member.id}-aadhaar`,
+        panFileField: `family-${member.id}-pan`,
+        passportFileField: `family-${member.id}-passport`,
+      })),
       roomPreferences,
       totalAmount: calculatedTotalAmount,
-      aadhaarFileName: fileName('aadhaar'),
-      panFileName: fileName('pan'),
-      passportFileName: fileName('passport'),
+      aadhaarFileName: mainDocuments.aadhaar,
+      panFileName: mainDocuments.pan,
+      passportFileName: mainDocuments.passport,
     };
+
+    Object.entries(payload).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        formData.set(key, JSON.stringify(value));
+        return;
+      }
+
+      formData.set(key, String(value ?? ''));
+    });
 
     try {
       const response = await fetch('/api/bookings', {
         method: editingBooking ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: formData,
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error ?? 'Unable to create booking');
       }
 
-      setBookings((currentBookings) =>
-        editingBooking
-          ? currentBookings.map((booking) => (booking.id === data.id ? data : booking))
-          : [data, ...currentBookings]
-      );
+      if (!data?.id) {
+        throw new Error('Booking was saved, but the server did not return the saved booking.');
+      }
+
+      const bookingsResponse = await fetch('/api/bookings', { cache: 'no-store' });
+      const latestBookings = await readJsonResponse(bookingsResponse);
+
+      if (!bookingsResponse.ok || !Array.isArray(latestBookings)) {
+        throw new Error('Booking was saved, but the booking list could not be refreshed.');
+      }
+
+      setBookings(latestBookings);
+      setSearchQuery('');
       form.reset();
       setEditingBooking(null);
       setFamilyMembers([]);
       setRoomPreferences([]);
       setAdvancePaidInput('');
+      setSelectedTourId('');
       setAdultCount(1);
       setChildCount(0);
-      setAdultPrice('');
-      setChildPrice('');
-      setDiscountPerPerson('');
+      setDocumentNames({ aadhaarFileName: '', panFileName: '', passportFileName: '' });
       setShowForm(false);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to save booking');
@@ -311,6 +390,7 @@ export default function BookingsPage() {
       (booking.members ?? []).map((member) => ({
         id: member.id,
         serialNumber: member.serialNumber,
+        ...splitName(member.fullName),
         fullName: member.fullName,
         gender: member.gender,
         dateOfBirth: member.dateOfBirth ? member.dateOfBirth.slice(0, 10) : '',
@@ -323,12 +403,15 @@ export default function BookingsPage() {
       }))
     );
     setRoomPreferences(parseRoomPreferences(booking.roomSharing));
+    setSelectedTourId(tours.find((tour) => tour.tourName === booking.tour)?.id ?? '');
     setAdvancePaidInput(String(booking.advancePaid ?? ''));
     setAdultCount(1);
     setChildCount(0);
-    setAdultPrice(String(booking.totalAmount ?? ''));
-    setChildPrice('');
-    setDiscountPerPerson('');
+    setDocumentNames({
+      aadhaarFileName: booking.aadhaarFileName ?? '',
+      panFileName: booking.panFileName ?? '',
+      passportFileName: booking.passportFileName ?? '',
+    });
     setFormError('');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -339,11 +422,10 @@ export default function BookingsPage() {
     setFamilyMembers([]);
     setRoomPreferences([]);
     setAdvancePaidInput('');
+    setSelectedTourId('');
     setAdultCount(1);
     setChildCount(0);
-    setAdultPrice('');
-    setChildPrice('');
-    setDiscountPerPerson('');
+    setDocumentNames({ aadhaarFileName: '', panFileName: '', passportFileName: '' });
     setFormError('');
     setShowForm(false);
   };
@@ -394,6 +476,8 @@ export default function BookingsPage() {
       {
         id: crypto.randomUUID(),
         serialNumber: null,
+        firstName: '',
+        lastName: '',
         fullName: '',
         gender: '',
         dateOfBirth: '',
@@ -442,7 +526,18 @@ export default function BookingsPage() {
   ) => {
     setFamilyMembers((currentMembers) =>
       currentMembers.map((member) =>
-        member.id === id ? { ...member, [field]: value } : member
+        member.id === id
+          ? {
+              ...member,
+              [field]: value,
+              fullName:
+                field === 'firstName'
+                  ? getFullName(value, member.lastName)
+                  : field === 'lastName'
+                    ? getFullName(member.firstName, value)
+                    : member.fullName,
+            }
+          : member
       )
     );
   };
@@ -494,11 +589,10 @@ export default function BookingsPage() {
               setFamilyMembers([]);
               setRoomPreferences([]);
               setAdvancePaidInput('');
+              setSelectedTourId('');
               setAdultCount(1);
               setChildCount(0);
-              setAdultPrice('');
-              setChildPrice('');
-              setDiscountPerPerson('');
+              setDocumentNames({ aadhaarFileName: '', panFileName: '', passportFileName: '' });
               setFormError('');
               setShowForm(!showForm);
             }}
@@ -571,16 +665,27 @@ export default function BookingsPage() {
                     />
                   </div>
                   <div>
-                    <Label>Aadhaar Card</Label>
-                    <Input name="aadhaar" type="file" />
+                    <Label>Aadhaar Card *</Label>
+                    <Input name="aadhaar" type="file" required={!documentNames.aadhaarFileName} />
+                    {documentNames.aadhaarFileName ? (
+                      <p className="mt-1 text-xs text-gray-500">{documentNames.aadhaarFileName}</p>
+                    ) : null}
                   </div>
                   <div>
-                    <Label>PAN Card</Label>
-                    <Input name="pan" type="file" />
+                    <Label>PAN Card *</Label>
+                    <Input name="pan" type="file" required={!documentNames.panFileName} />
+                    {documentNames.panFileName ? (
+                      <p className="mt-1 text-xs text-gray-500">{documentNames.panFileName}</p>
+                    ) : null}
                   </div>
                   <div>
-                    <Label>Passport</Label>
-                    <Input name="passport" type="file" />
+                    <Label>Passport *</Label>
+                    <Input name="passport" type="file" required={!documentNames.passportFileName} />
+                    {documentNames.passportFileName ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {documentNames.passportFileName}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -613,13 +718,24 @@ export default function BookingsPage() {
                         </div>
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                           <div>
-                            <Label>Full Name *</Label>
+                            <Label>First Name *</Label>
                             <Input
-                              value={member.fullName}
+                              value={member.firstName}
                               onChange={(event) =>
-                                updateFamilyMember(member.id, 'fullName', event.target.value)
+                                updateFamilyMember(member.id, 'firstName', event.target.value)
                               }
-                              placeholder="Passenger name"
+                              placeholder="Passenger first name"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <Label>Last Name</Label>
+                            <Input
+                              value={member.lastName}
+                              onChange={(event) =>
+                                updateFamilyMember(member.id, 'lastName', event.target.value)
+                              }
+                              placeholder="Passenger last name"
                             />
                           </div>
                           <div>
@@ -670,15 +786,19 @@ export default function BookingsPage() {
                             />
                           </div>
                           <div>
-                            <Label>Aadhaar Card</Label>
+                            <Label>Aadhaar Card *</Label>
                             <Input
+                              name={`family-${member.id}-aadhaar`}
                               type="file"
+                              required={!member.aadhaarFileName}
                               onChange={(event) =>
-                                updateFamilyMember(
-                                  member.id,
-                                  'aadhaarFileName',
-                                  event.target.files?.[0]?.name ?? ''
-                                )
+                                event.target.files?.[0]?.name
+                                  ? updateFamilyMember(
+                                      member.id,
+                                      'aadhaarFileName',
+                                      event.target.files[0].name
+                                    )
+                                  : undefined
                               }
                             />
                             {member.aadhaarFileName ? (
@@ -686,15 +806,19 @@ export default function BookingsPage() {
                             ) : null}
                           </div>
                           <div>
-                            <Label>PAN Card</Label>
+                            <Label>PAN Card *</Label>
                             <Input
+                              name={`family-${member.id}-pan`}
                               type="file"
+                              required={!member.panFileName}
                               onChange={(event) =>
-                                updateFamilyMember(
-                                  member.id,
-                                  'panFileName',
-                                  event.target.files?.[0]?.name ?? ''
-                                )
+                                event.target.files?.[0]?.name
+                                  ? updateFamilyMember(
+                                      member.id,
+                                      'panFileName',
+                                      event.target.files[0].name
+                                    )
+                                  : undefined
                               }
                             />
                             {member.panFileName ? (
@@ -702,15 +826,19 @@ export default function BookingsPage() {
                             ) : null}
                           </div>
                           <div>
-                            <Label>Passport</Label>
+                            <Label>Passport *</Label>
                             <Input
+                              name={`family-${member.id}-passport`}
                               type="file"
+                              required={!member.passportFileName}
                               onChange={(event) =>
-                                updateFamilyMember(
-                                  member.id,
-                                  'passportFileName',
-                                  event.target.files?.[0]?.name ?? ''
-                                )
+                                event.target.files?.[0]?.name
+                                  ? updateFamilyMember(
+                                      member.id,
+                                      'passportFileName',
+                                      event.target.files[0].name
+                                    )
+                                  : undefined
                               }
                             />
                             {member.passportFileName ? (
@@ -784,7 +912,8 @@ export default function BookingsPage() {
                     <Label>Select Tour Batch *</Label>
                     <Select
                       name="tourId"
-                      defaultValue={tours.find((tour) => tour.tourName === editingBooking?.tour)?.id ?? ''}
+                      value={selectedTourId}
+                      onChange={(event) => setSelectedTourId(event.target.value)}
                       required
                     >
                       <option value="">Choose tour</option>
@@ -829,16 +958,6 @@ export default function BookingsPage() {
                       </div>
                     </div>
                     <div>
-                      <Label>Price Per Adult</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="Adult price"
-                        value={adultPrice}
-                        onChange={(event) => setAdultPrice(event.target.value)}
-                      />
-                    </div>
-                    <div>
                       <Label>Children</Label>
                       <div className="flex gap-2">
                         <Input
@@ -855,26 +974,6 @@ export default function BookingsPage() {
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
-                    <div>
-                      <Label>Price Per Child</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="Child price"
-                        value={childPrice}
-                        onChange={(event) => setChildPrice(event.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label>Discount Per Person</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="Discount amount"
-                        value={discountPerPerson}
-                        onChange={(event) => setDiscountPerPerson(event.target.value)}
-                      />
                     </div>
                     <div>
                       <Label>Total Amount</Label>

@@ -37,6 +37,7 @@ model Tour {
   returnDate        DateTime
   totalSeats        Int
   packagePrice      Int
+  childPrice        Int                         @default(0)
   pickupCity        String
   tourManager       String
   status            String                      @default("draft")
@@ -50,7 +51,7 @@ model Tour {
 
 model Traveler {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
-  serialNumber Int       @unique
+  serialNumber Int
   fullName     String
   gender       String?
   dateOfBirth  DateTime?
@@ -86,30 +87,34 @@ model Booking {
 }
 
 model BookingMember {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
-  bookingId   String    @db.ObjectId
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId    String    @db.ObjectId
   serialNumber Int?
-  fullName    String
-  gender      String?
-  dateOfBirth DateTime?
-  phone       String?
-  email       String?
-  relation    String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  booking     Booking   @relation(fields: [bookingId], references: [id])
+  fullName     String
+  gender       String?
+  dateOfBirth  DateTime?
+  phone        String?
+  email        String?
+  relation     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  booking      Booking   @relation(fields: [bookingId], references: [id])
 }
 
 model Document {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  bookingId  String    @db.ObjectId
-  type       String
-  url        String
-  fileName   String
-  uploadedAt DateTime  @default(now())
-  expiryDate DateTime?
-  status     String    @default("pending")
-  booking    Booking   @relation(fields: [bookingId], references: [id])
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId     String    @db.ObjectId
+  type          String
+  url           String
+  fileName      String
+  mimeType      String?
+  fileSize      Int?
+  fileData      Bytes?
+  passengerName String?
+  uploadedAt    DateTime  @default(now())
+  expiryDate    DateTime?
+  status        String    @default("pending")
+  booking       Booking   @relation(fields: [bookingId], references: [id])
 }
 
 model Payment {
