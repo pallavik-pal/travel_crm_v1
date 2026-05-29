@@ -251,14 +251,14 @@ function DashboardContent() {
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Button className="w-full" variant="default">
-              Create New Tour
+            <Button className="w-full" variant="default" asChild>
+              <Link href="/tours?action=create">Create New Tour</Link>
             </Button>
-            <Button className="w-full" variant="outline">
-              Add Booking
+            <Button className="w-full" variant="outline" asChild>
+              <Link href="/bookings?action=create">Add Booking</Link>
             </Button>
-            <Button className="w-full" variant="outline">
-              Record Payment
+            <Button className="w-full" variant="outline" asChild>
+              <Link href="/payments">Record Payment</Link>
             </Button>
             <Button className="w-full" variant="outline">
               Send Reminders

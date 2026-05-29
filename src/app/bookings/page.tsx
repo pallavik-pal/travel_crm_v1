@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency, GENDER_OPTIONS, PAYMENT_MODES, ROOM_SHARING_OPTIONS } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import { Edit2, Eye, Plus, Trash2 } from 'lucide-react';
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 type BookingMemberRecord = {
   id: string;
@@ -159,6 +159,7 @@ const mockBookings: BookingRecord[] = [
 type FamilyMemberForm = {
   id: string;
   serialNumber?: number | null;
+  passengerType: string;
   firstName: string;
   lastName: string;
   fullName: string;
@@ -199,6 +200,11 @@ const ADDITIONAL_DOCUMENT_TYPES = [
   { value: 'passport', label: 'Passport' },
   { value: 'photo', label: 'Photo' },
   { value: 'visa', label: 'Visa' },
+];
+
+const PASSENGER_TYPE_OPTIONS = [
+  { value: 'adult', label: 'Adult' },
+  { value: 'child', label: 'Child' },
 ];
 
 const BOOKING_STATUS_OPTIONS = [
@@ -289,8 +295,7 @@ export default function BookingsPage() {
   const [roomPreferences, setRoomPreferences] = useState<RoomPreferenceForm[]>([]);
   const [advancePaidInput, setAdvancePaidInput] = useState('');
   const [selectedTourId, setSelectedTourId] = useState('');
-  const [adultCount, setAdultCount] = useState(1);
-  const [childCount, setChildCount] = useState(0);
+  const [mainPassengerType, setMainPassengerType] = useState('adult');
   const [documentNames, setDocumentNames] = useState<DocumentNames>({
     aadhaarFileName: '',
     panFileName: '',
@@ -300,6 +305,12 @@ export default function BookingsPage() {
   const selectedTour =
     tours.find((tour) => tour.id === selectedTourId) ??
     tours.find((tour) => tour.tourName === editingBooking?.tour);
+  const adultCount =
+    (mainPassengerType === 'adult' ? 1 : 0) +
+    familyMembers.filter((member) => member.passengerType === 'adult').length;
+  const childCount =
+    (mainPassengerType === 'child' ? 1 : 0) +
+    familyMembers.filter((member) => member.passengerType === 'child').length;
   const calculatedTotalAmount =
     adultCount * Number(selectedTour?.packagePrice ?? 0) +
     childCount * Number(selectedTour?.childPrice ?? 0);
@@ -309,6 +320,26 @@ export default function BookingsPage() {
     0
   );
   const editingName = splitName(editingBooking?.travelerName ?? '');
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('action') !== 'create') {
+      return;
+    }
+
+    window.setTimeout(() => {
+      setEditingBooking(null);
+      setViewingBooking(null);
+      setFamilyMembers([]);
+      setRoomPreferences([]);
+      setAdvancePaidInput('');
+      setSelectedTourId('');
+      setMainPassengerType('adult');
+      setDocumentNames({ aadhaarFileName: '', panFileName: '' });
+      setAdditionalDocuments([]);
+      setFormError('');
+      setShowForm(true);
+    }, 0);
+  }, []);
 
   const handleSaveBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -441,8 +472,7 @@ export default function BookingsPage() {
       setRoomPreferences([]);
       setAdvancePaidInput('');
       setSelectedTourId('');
-      setAdultCount(1);
-      setChildCount(0);
+      setMainPassengerType('adult');
       setDocumentNames({ aadhaarFileName: '', panFileName: '' });
       setAdditionalDocuments([]);
       setShowForm(false);
@@ -459,6 +489,7 @@ export default function BookingsPage() {
       (booking.members ?? []).map((member) => ({
         id: member.id,
         serialNumber: member.serialNumber,
+        passengerType: 'adult',
         ...splitName(member.fullName),
         fullName: member.fullName,
         gender: member.gender,
@@ -480,8 +511,7 @@ export default function BookingsPage() {
     setRoomPreferences(parseRoomPreferences(booking.roomSharing));
     setSelectedTourId(tours.find((tour) => tour.tourName === booking.tour)?.id ?? '');
     setAdvancePaidInput(String(booking.advancePaid ?? ''));
-    setAdultCount(1);
-    setChildCount(0);
+    setMainPassengerType('adult');
     setDocumentNames({
       aadhaarFileName: booking.aadhaarFileName ?? '',
       panFileName: booking.panFileName ?? '',
@@ -504,8 +534,7 @@ export default function BookingsPage() {
     setRoomPreferences([]);
     setAdvancePaidInput('');
     setSelectedTourId('');
-    setAdultCount(1);
-    setChildCount(0);
+    setMainPassengerType('adult');
     setDocumentNames({ aadhaarFileName: '', panFileName: '' });
     setAdditionalDocuments([]);
     setFormError('');
@@ -518,6 +547,7 @@ export default function BookingsPage() {
       {
         id: crypto.randomUUID(),
         serialNumber: null,
+        passengerType: 'adult',
         firstName: '',
         lastName: '',
         fullName: '',
@@ -744,8 +774,7 @@ export default function BookingsPage() {
               setRoomPreferences([]);
               setAdvancePaidInput('');
               setSelectedTourId('');
-              setAdultCount(1);
-              setChildCount(0);
+              setMainPassengerType('adult');
               setDocumentNames({ aadhaarFileName: '', panFileName: '' });
               setAdditionalDocuments([]);
               setFormError('');
@@ -782,6 +811,20 @@ export default function BookingsPage() {
                       placeholder="Traveler's last name"
                       defaultValue={editingName.lastName}
                     />
+                  </div>
+                  <div>
+                    <Label>Passenger Type *</Label>
+                    <Select
+                      value={mainPassengerType}
+                      onChange={(event) => setMainPassengerType(event.target.value)}
+                      required
+                    >
+                      {PASSENGER_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
                   </div>
                   <div>
                     <Label>Phone Number *</Label>
@@ -954,6 +997,26 @@ export default function BookingsPage() {
                               }
                               placeholder="Spouse / Child / Parent"
                             />
+                          </div>
+                          <div>
+                            <Label>Passenger Type *</Label>
+                            <Select
+                              value={member.passengerType}
+                              onChange={(event) =>
+                                updateFamilyMember(
+                                  member.id,
+                                  'passengerType',
+                                  event.target.value
+                                )
+                              }
+                              required
+                            >
+                              {PASSENGER_TYPE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Select>
                           </div>
                           <div>
                             <Label>Gender</Label>
@@ -1204,39 +1267,21 @@ export default function BookingsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>Adults</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={adultCount}
-                          onChange={(event) => setAdultCount(Number(event.target.value || 0))}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setAdultCount((count) => count + 1)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Input
+                        type="number"
+                        value={adultCount}
+                        readOnly
+                        className="font-semibold text-black"
+                      />
                     </div>
                     <div>
                       <Label>Children</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={childCount}
-                          onChange={(event) => setChildCount(Number(event.target.value || 0))}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setChildCount((count) => count + 1)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Input
+                        type="number"
+                        value={childCount}
+                        readOnly
+                        className="font-semibold text-black"
+                      />
                     </div>
                     <div>
                       <Label>Total Amount</Label>

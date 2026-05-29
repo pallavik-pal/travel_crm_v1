@@ -24,7 +24,7 @@ import { formatCurrency, formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import { Archive, Edit2, Eye, Plus, X } from 'lucide-react';
 import Link from 'next/link';
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 const mockTours = [
   {
@@ -133,6 +133,18 @@ export default function ToursPage() {
   const [endDateFilter, setEndDateFilter] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('action') !== 'create') {
+      return;
+    }
+
+    window.setTimeout(() => {
+      setEditingTour(null);
+      setFormError('');
+      setShowForm(true);
+    }, 0);
+  }, []);
 
   const handleSaveTour = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
