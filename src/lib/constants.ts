@@ -8,6 +8,7 @@ export const ROUTES = {
   BOOKINGS: '/bookings',
   TRAVELERS: '/travelers',
   PAYMENTS: '/payments',
+  CUSTOMER_PAYMENTS: '/customer-payments',
   OPERATIONS: '/operations',
   DOCUMENTS: '/documents',
   REPORTS: '/reports',

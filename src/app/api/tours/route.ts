@@ -1,4 +1,5 @@
 import { getTours } from '@/lib/records';
+import { tourStatusForReturnDate } from '@/lib/records';
 import { generateTourCode } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
@@ -27,19 +28,22 @@ export async function POST(request: Request) {
     }
   }
 
+  const returnDate = new Date(body.returnDate);
+  const status = tourStatusForReturnDate(returnDate, body.status ?? 'active');
+
   const tour = await prisma.tour.create({
     data: {
       tourName: body.tourName,
       tourCode: generateTourCode(),
       destination: body.destination,
       departureDate: new Date(body.departureDate),
-      returnDate: new Date(body.returnDate),
+      returnDate,
       totalSeats: Number(body.totalSeats),
       packagePrice: Number(body.packagePrice),
       childPrice: Number(body.childPrice),
       pickupCity: body.pickupCity,
       tourManager: body.tourManager,
-      status: body.status ?? 'draft',
+      status,
       costEstimate: Number(body.costEstimate ?? 0),
     },
     include: {
@@ -61,7 +65,7 @@ export async function POST(request: Request) {
       childPrice: tour.childPrice || tour.packagePrice,
       pickupCity: tour.pickupCity,
       tourManager: tour.tourManager,
-      status: tour.status,
+      status: tourStatusForReturnDate(tour.returnDate, tour.status),
     },
     { status: 201 }
   );

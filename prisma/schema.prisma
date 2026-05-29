@@ -118,20 +118,32 @@ model Document {
 }
 
 model Payment {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  bookingId     String    @db.ObjectId
-  totalAmount   Int
-  advancePaid   Int
-  balanceAmount Int
-  status        String
-  paymentDate   DateTime?
-  dueDate       DateTime
+  id                  String               @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId           String               @db.ObjectId
+  totalAmount         Int
+  advancePaid         Int
+  balanceAmount       Int
+  status              String
+  paymentDate         DateTime?
+  dueDate             DateTime
+  paymentMode         String
+  transactionId       String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  booking             Booking              @relation(fields: [bookingId], references: [id])
+  customerPaymentLogs CustomerPaymentLog[]
+}
+
+model CustomerPaymentLog {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  paymentId     String   @db.ObjectId
+  amountPaid    Int
+  paymentDate   DateTime @default(now())
   paymentMode   String
   transactionId String?
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  booking       Booking   @relation(fields: [bookingId], references: [id])
+  createdAt     DateTime @default(now())
+  payment       Payment  @relation(fields: [paymentId], references: [id])
 }
 
 model OperationsStatus {
@@ -176,10 +188,14 @@ model OperationsPaymentCategory {
 }
 
 model OperationsPaymentLog {
-  id         String                    @id @default(auto()) @map("_id") @db.ObjectId
-  categoryId String                    @db.ObjectId
-  amountPaid Int
-  utrNumber  String
-  createdAt  DateTime                  @default(now())
-  category   OperationsPaymentCategory @relation(fields: [categoryId], references: [id])
+  id          String                    @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId  String                    @db.ObjectId
+  amountPaid  Int
+  utrNumber   String
+  pax         String?
+  tripType    String?
+  totalAdded  Int?
+  logType     String                    @default("payment")
+  createdAt   DateTime                  @default(now())
+  category    OperationsPaymentCategory @relation(fields: [categoryId], references: [id])
 }

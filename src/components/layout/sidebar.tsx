@@ -42,8 +42,13 @@ const sidebarItems = [
     icon: Users,
   },
   {
-    name: 'Payments',
+    name: 'Ops Payments',
     href: ROUTES.PAYMENTS,
+    icon: CreditCard,
+  },
+  {
+    name: 'Customer Payments',
+    href: ROUTES.CUSTOMER_PAYMENTS,
     icon: CreditCard,
   },
   {

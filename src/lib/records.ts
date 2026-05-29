@@ -10,7 +10,26 @@ const documentMetadataSelect = {
   status: true,
 } as const;
 
+const hasTourEnded = (returnDate: Date) => returnDate.getTime() < Date.now();
+
+export const tourStatusForReturnDate = (returnDate: Date, status: string) =>
+  hasTourEnded(returnDate) ? 'completed' : status;
+
+const completeEndedTours = async () => {
+  await prisma.tour.updateMany({
+    where: {
+      returnDate: { lt: new Date() },
+      status: { not: 'completed' },
+    },
+    data: {
+      status: 'completed',
+    },
+  });
+};
+
 export async function getTours() {
+  await completeEndedTours();
+
   const tours = await prisma.tour.findMany({
     include: { bookings: { include: { members: true } } },
     orderBy: { departureDate: 'asc' },
@@ -32,11 +51,13 @@ export async function getTours() {
     childPrice: tour.childPrice || tour.packagePrice,
     pickupCity: tour.pickupCity,
     tourManager: tour.tourManager,
-    status: tour.status,
+    status: tourStatusForReturnDate(tour.returnDate, tour.status),
   }));
 }
 
 export async function getTourDetails(id: string) {
+  await completeEndedTours();
+
   const tour = await prisma.tour.findUnique({
     where: { id },
     include: {
@@ -74,7 +95,7 @@ export async function getTourDetails(id: string) {
     childPrice: tour.childPrice || tour.packagePrice,
     pickupCity: tour.pickupCity,
     tourManager: tour.tourManager,
-    status: tour.status,
+    status: tourStatusForReturnDate(tour.returnDate, tour.status),
     rooms: tour.rooms.map((room) => ({
       id: room.id,
       roomNumber: room.roomNumber,
@@ -195,6 +216,23 @@ export async function getBookings() {
 
       return '';
     };
+    const additionalDocumentList = (passengerName: string) =>
+      booking.documents
+        .filter(
+          (document) =>
+            !usedDocumentIds.has(document.id) &&
+            document.passengerName === passengerName &&
+            !['aadhaar', 'pan'].includes(document.type)
+        )
+        .map((document) => {
+          usedDocumentIds.add(document.id);
+
+          return {
+            id: document.id,
+            type: document.type,
+            fileName: document.fileName,
+          };
+        });
 
     return {
       id: booking.id,
@@ -209,7 +247,8 @@ export async function getBookings() {
       address: booking.traveler.address ?? '',
       aadhaarFileName: documentFileName(booking.traveler.fullName, 'aadhaar', true),
       panFileName: documentFileName(booking.traveler.fullName, 'pan', true),
-      passportFileName: documentFileName(booking.traveler.fullName, 'passport', true),
+      passportFileName: '',
+      additionalDocuments: additionalDocumentList(booking.traveler.fullName),
       memberCount: booking.members.length,
       members: booking.members
         .map((member) => ({
@@ -223,7 +262,8 @@ export async function getBookings() {
           relation: member.relation ?? '',
           aadhaarFileName: documentFileName(member.fullName, 'aadhaar', true),
           panFileName: documentFileName(member.fullName, 'pan', true),
-          passportFileName: documentFileName(member.fullName, 'passport', true),
+          passportFileName: '',
+          additionalDocuments: additionalDocumentList(member.fullName),
         }))
         .sort(
           (first, second) =>
@@ -295,7 +335,11 @@ export async function getPayments() {
         include: {
           tour: true,
           traveler: true,
+          members: true,
         },
+      },
+      customerPaymentLogs: {
+        orderBy: { createdAt: 'desc' },
       },
     },
     orderBy: { dueDate: 'asc' },
@@ -305,13 +349,24 @@ export async function getPayments() {
     id: payment.id,
     bookingCode: payment.booking.bookingCode,
     travelerName: payment.booking.traveler.fullName,
+    familyMembers: payment.booking.members
+      .map((member) => member.fullName)
+      .sort((first, second) => first.localeCompare(second)),
     tour: payment.booking.tour.tourName,
     totalAmount: payment.totalAmount,
     advancePaid: payment.advancePaid,
     balance: payment.balanceAmount,
     dueDate: payment.dueDate.toISOString(),
-    status: payment.status,
+    status: payment.balanceAmount === 0 ? 'completed' : payment.status,
     paymentMode: payment.paymentMode.replace('_', ' '),
+    logs: payment.customerPaymentLogs.map((log) => ({
+      id: log.id,
+      amountPaid: log.amountPaid,
+      paymentDate: log.paymentDate.toISOString(),
+      paymentMode: log.paymentMode.replace('_', ' '),
+      transactionId: log.transactionId ?? '',
+      createdAt: log.createdAt.toISOString(),
+    })),
   }));
 }
 

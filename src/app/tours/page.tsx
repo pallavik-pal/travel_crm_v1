@@ -22,9 +22,9 @@ import {
 } from '@/components/ui/table';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
-import { Archive, Edit2, Eye, Plus } from 'lucide-react';
+import { Archive, Edit2, Eye, Plus, X } from 'lucide-react';
 import Link from 'next/link';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 
 const mockTours = [
   {
@@ -74,14 +74,67 @@ const mockTours = [
   },
 ];
 
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+  onClear,
+}: {
+  label: string;
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (value: string) => void;
+  onClear: () => void;
+}) {
+  const isSelected = Boolean(value);
+
+  return (
+    <div
+      className={`flex h-9 w-fit max-w-full overflow-hidden rounded-full border shadow-sm ${
+        isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-200 bg-gray-50'
+      }`}
+    >
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={`w-auto max-w-full border-0 py-0 pl-3 pr-7 text-sm outline-none ${
+          isSelected ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-700'
+        }`}
+      >
+        <option value="">{label}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {isSelected ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex w-8 items-center justify-center border-l border-blue-500 text-white"
+          aria-label={`Clear ${label}`}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ToursPage() {
   const [tours, setTours] = useRecords('/api/tours', [] as typeof mockTours);
   const [showForm, setShowForm] = useState(false);
+  const [editingTour, setEditingTour] = useState<(typeof mockTours)[number] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [destinationFilter, setDestinationFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const handleCreateTour = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSaveTour = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSaving(true);
     setFormError('');
@@ -90,8 +143,8 @@ export default function ToursPage() {
     const payload = Object.fromEntries(formData.entries());
 
     try {
-      const response = await fetch('/api/tours', {
-        method: 'POST',
+      const response = await fetch(editingTour ? `/api/tours/${editingTour.id}` : '/api/tours', {
+        method: editingTour ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -101,8 +154,13 @@ export default function ToursPage() {
         throw new Error(data.error ?? 'Unable to create tour');
       }
 
-      setTours((currentTours) => [data, ...currentTours]);
+      setTours((currentTours) =>
+        editingTour
+          ? currentTours.map((tour) => (tour.id === editingTour.id ? data : tour))
+          : [data, ...currentTours]
+      );
       event.currentTarget.reset();
+      setEditingTour(null);
       setShowForm(false);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to create tour');
@@ -111,17 +169,44 @@ export default function ToursPage() {
     }
   };
 
-  const filteredTours = tours.filter(
-    (tour) =>
-      tour.tourName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tour.tourCode.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filterOptions = useMemo(() => {
+    const destinations = new Set<string>();
+
+    tours.forEach((tour) => {
+      destinations.add(tour.destination);
+    });
+
+    return {
+      destinations: Array.from(destinations).sort((a, b) => a.localeCompare(b)),
+    };
+  }, [tours]);
+
+  const filteredTours = tours.filter((tour) => {
+    const departureDate = tour.departureDate.slice(0, 10);
+    const query = searchQuery.toLowerCase();
+    const matchesSearch =
+      tour.tourName.toLowerCase().includes(query) ||
+      tour.tourCode.toLowerCase().includes(query);
+    const matchesDestination =
+      !destinationFilter || tour.destination === destinationFilter;
+    const matchesStartDate =
+      !startDateFilter || departureDate >= startDateFilter;
+    const matchesEndDate =
+      !endDateFilter || departureDate <= endDateFilter;
+
+    return (
+      matchesSearch &&
+      matchesDestination &&
+      matchesStartDate &&
+      matchesEndDate
+    );
+  });
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       active: 'bg-green-100 text-green-800',
       draft: 'bg-yellow-100 text-yellow-800',
-      completed: 'bg-blue-100 text-blue-800',
+      completed: 'bg-red-100 text-red-800',
       archived: 'bg-gray-100 text-gray-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
@@ -148,7 +233,13 @@ export default function ToursPage() {
             <h1 className="text-3xl font-bold text-gray-900">Tours</h1>
             <p className="text-gray-600 mt-1">Manage group tour batches</p>
           </div>
-          <Button onClick={() => setShowForm(!showForm)}>
+          <Button
+            onClick={() => {
+              setEditingTour(null);
+              setFormError('');
+              setShowForm(!showForm);
+            }}
+          >
             <Plus className="w-4 h-4 mr-2" />
             Create Tour
           </Button>
@@ -157,57 +248,123 @@ export default function ToursPage() {
         {showForm && (
           <Card>
             <CardHeader>
-              <CardTitle>Create New Tour</CardTitle>
+              <CardTitle>{editingTour ? 'Edit Tour' : 'Create New Tour'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleCreateTour} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <form onSubmit={handleSaveTour} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Tour Name</Label>
-                  <Input name="tourName" placeholder="e.g., Thailand May Batch" required />
+                  <Input
+                    name="tourName"
+                    defaultValue={editingTour?.tourName ?? ''}
+                    placeholder="e.g., Thailand May Batch"
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Destination</Label>
-                  <Input name="destination" placeholder="e.g., Bangkok, Phuket" required />
+                  <Input
+                    name="destination"
+                    defaultValue={editingTour?.destination ?? ''}
+                    placeholder="e.g., Bangkok, Phuket"
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Departure Date</Label>
-                  <Input name="departureDate" type="date" required />
+                  <Input
+                    name="departureDate"
+                    type="date"
+                    defaultValue={editingTour?.departureDate.slice(0, 10) ?? ''}
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Return Date</Label>
-                  <Input name="returnDate" type="date" required />
+                  <Input
+                    name="returnDate"
+                    type="date"
+                    defaultValue={editingTour?.returnDate.slice(0, 10) ?? ''}
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Total Seats</Label>
-                  <Input name="totalSeats" type="number" min="1" placeholder="40" required />
+                  <Input
+                    name="totalSeats"
+                    type="number"
+                    min="1"
+                    defaultValue={editingTour?.totalSeats ?? ''}
+                    placeholder="40"
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Adult Price Per Person (INR)</Label>
-                  <Input name="packagePrice" type="number" min="0" placeholder="45000" required />
+                  <Input
+                    name="packagePrice"
+                    type="number"
+                    min="0"
+                    defaultValue={editingTour?.packagePrice ?? ''}
+                    placeholder="45000"
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Child Price Per Person (INR)</Label>
-                  <Input name="childPrice" type="number" min="1" placeholder="30000" required />
+                  <Input
+                    name="childPrice"
+                    type="number"
+                    min="1"
+                    defaultValue={editingTour?.childPrice ?? ''}
+                    placeholder="30000"
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Pickup City</Label>
-                  <Input name="pickupCity" placeholder="Delhi" required />
+                  <Input
+                    name="pickupCity"
+                    defaultValue={editingTour?.pickupCity ?? ''}
+                    placeholder="Delhi"
+                    required
+                  />
                 </div>
                 <div>
                   <Label>Tour Manager</Label>
-                  <Input name="tourManager" placeholder="Manager name" required />
+                  <Input
+                    name="tourManager"
+                    defaultValue={editingTour?.tourManager ?? ''}
+                    placeholder="Manager name"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <select
+                    name="status"
+                    defaultValue={editingTour?.status ?? 'active'}
+                    className="h-10 w-full rounded border px-3 text-sm"
+                    required
+                  >
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                  </select>
                 </div>
                 {formError && (
                   <p className="md:col-span-2 text-sm text-red-600">{formError}</p>
                 )}
                 <div className="md:col-span-2 flex gap-2">
                   <Button type="submit" className="flex-1" disabled={isSaving}>
-                    {isSaving ? 'Saving...' : 'Create Tour'}
+                    {isSaving ? 'Saving...' : editingTour ? 'Update Tour' : 'Create Tour'}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setShowForm(false)}
+                    onClick={() => {
+                      setEditingTour(null);
+                      setShowForm(false);
+                    }}
                     className="flex-1"
                   >
                     Cancel
@@ -218,13 +375,6 @@ export default function ToursPage() {
           </Card>
         )}
 
-        <Input
-          placeholder="Search by tour name or code..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-md"
-        />
-
         <Card>
           <CardHeader>
             <CardTitle>Tour Batches</CardTitle>
@@ -233,6 +383,52 @@ export default function ToursPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Input
+                placeholder="Search by tour name or code..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 w-full sm:w-72"
+              />
+              <FilterSelect
+                label="Destination"
+                value={destinationFilter}
+                options={filterOptions.destinations.map((destination) => ({
+                  label: destination,
+                  value: destination,
+                }))}
+                onChange={setDestinationFilter}
+                onClear={() => setDestinationFilter('')}
+              />
+              <Input
+                type="date"
+                value={startDateFilter}
+                onChange={(e) => setStartDateFilter(e.target.value)}
+                aria-label="Start date"
+                className="h-9 w-full sm:w-40"
+              />
+              <Input
+                type="date"
+                value={endDateFilter}
+                onChange={(e) => setEndDateFilter(e.target.value)}
+                aria-label="End date"
+                className="h-9 w-full sm:w-40"
+              />
+              {(startDateFilter || endDateFilter) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setStartDateFilter('');
+                    setEndDateFilter('');
+                  }}
+                  className="h-9"
+                >
+                  Clear dates
+                </Button>
+              ) : null}
+            </div>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -300,7 +496,16 @@ export default function ToursPage() {
                               <Eye size={16} />
                             </Link>
                           </Button>
-                          <Button size="sm" variant="ghost">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditingTour(tour);
+                              setFormError('');
+                              setShowForm(true);
+                            }}
+                            aria-label={`Edit ${tour.tourName}`}
+                          >
                             <Edit2 size={16} />
                           </Button>
                           <Button size="sm" variant="ghost">

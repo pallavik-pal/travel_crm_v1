@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { getTourDetails } from '@/lib/records';
-import { ArrowLeft, CalendarDays, MapPin, Users } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CalendarDays, CreditCard, IndianRupee, Users } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -57,14 +57,19 @@ export default async function TourDetailsPage({
     notFound();
   }
 
-  const collectionPercent =
-    tour.bookings.length > 0
-      ? Math.round(
-          (tour.bookings.reduce((sum, booking) => sum + booking.payment.advancePaid, 0) /
-            tour.bookings.reduce((sum, booking) => sum + booking.payment.totalAmount, 0)) *
-            100
-        )
-      : 0;
+  const totalBookingAmount = tour.bookings.reduce(
+    (sum, booking) => sum + booking.payment.totalAmount,
+    0
+  );
+  const totalBalance = tour.bookings.reduce(
+    (sum, booking) => sum + booking.payment.balanceAmount,
+    0
+  );
+  const pendingAmount = tour.bookings.reduce(
+    (sum, booking) =>
+      booking.payment.balanceAmount > 0 ? sum + booking.payment.balanceAmount : sum,
+    0
+  );
 
   return (
     <MainLayout>
@@ -89,7 +94,7 @@ export default async function TourDetailsPage({
           </Badge>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
           <Card>
             <CardContent className="flex items-center gap-3 pt-6">
               <CalendarDays className="h-5 w-5 text-blue-600" />
@@ -101,26 +106,38 @@ export default async function TourDetailsPage({
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 pt-6">
-              <MapPin className="h-5 w-5 text-green-600" />
+              <Users className="h-5 w-5 text-purple-600" />
               <div>
-                <p className="text-sm text-gray-600">Pickup City</p>
-                <p className="font-semibold">{tour.pickupCity}</p>
+                <p className="text-sm text-gray-600">Customers</p>
+                <p className="font-semibold">{tour.occupiedSeats}</p>
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 pt-6">
-              <Users className="h-5 w-5 text-purple-600" />
+              <IndianRupee className="h-5 w-5 text-green-600" />
               <div>
-                <p className="text-sm text-gray-600">Customers</p>
-                <p className="font-semibold">{tour.bookings.length}</p>
+                <p className="text-sm text-gray-600">Total Booking Amount</p>
+                <p className="font-semibold">{formatCurrency(totalBookingAmount)}</p>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-gray-600">Collection</p>
-              <p className="text-2xl font-bold">{collectionPercent}%</p>
+            <CardContent className="flex items-center gap-3 pt-6">
+              <CreditCard className="h-5 w-5 text-red-600" />
+              <div>
+                <p className="text-sm text-gray-600">Balance</p>
+                <p className="font-semibold">{formatCurrency(totalBalance)}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 pt-6">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+              <div>
+                <p className="text-sm text-gray-600">Pending</p>
+                <p className="font-semibold">{formatCurrency(pendingAmount)}</p>
+              </div>
             </CardContent>
           </Card>
         </div>

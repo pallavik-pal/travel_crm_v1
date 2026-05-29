@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency, GENDER_OPTIONS, PAYMENT_MODES, ROOM_SHARING_OPTIONS } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import { Edit2, Eye, Plus, Trash2 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 
 type BookingMemberRecord = {
   id: string;
@@ -25,6 +25,7 @@ type BookingMemberRecord = {
   aadhaarFileName?: string;
   panFileName?: string;
   passportFileName?: string;
+  additionalDocuments?: AdditionalDocumentForm[];
 };
 
 type BookingRecord = {
@@ -41,6 +42,7 @@ type BookingRecord = {
   aadhaarFileName?: string;
   panFileName?: string;
   passportFileName?: string;
+  additionalDocuments?: AdditionalDocumentForm[];
   memberCount: number;
   members: BookingMemberRecord[];
   seat: string;
@@ -168,12 +170,18 @@ type FamilyMemberForm = {
   aadhaarFileName: string;
   panFileName: string;
   passportFileName: string;
+  additionalDocuments: AdditionalDocumentForm[];
 };
 
 type DocumentNames = {
   aadhaarFileName: string;
   panFileName: string;
-  passportFileName: string;
+};
+
+type AdditionalDocumentForm = {
+  id: string;
+  type: string;
+  fileName: string;
 };
 
 type RoomPreferenceForm = {
@@ -186,6 +194,33 @@ const mockTours = [
   { id: 'kashmir', tourName: 'Kashmir June Batch', packagePrice: 35000, childPrice: 25000 },
   { id: 'dubai', tourName: 'Dubai July Batch', packagePrice: 55000, childPrice: 40000 },
 ];
+
+const ADDITIONAL_DOCUMENT_TYPES = [
+  { value: 'passport', label: 'Passport' },
+  { value: 'photo', label: 'Photo' },
+  { value: 'visa', label: 'Visa' },
+];
+
+const BOOKING_STATUS_OPTIONS = [
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'refund', label: 'Refund' },
+];
+
+const PAYMENT_STATUS_OPTIONS = [
+  { value: 'paid', label: 'Paid' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'overdue', label: 'Overdue' },
+];
+
+const normalizePaymentStatus = (status: string) =>
+  status === 'completed' ? 'paid' : status;
+
+const formatStatusLabel = (status: string) =>
+  status
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const parseRoomPreferences = (roomSharing: string): RoomPreferenceForm[] => {
   if (!roomSharing) return [];
@@ -243,11 +278,13 @@ export default function BookingsPage() {
   const [tours] = useRecords('/api/tours', [] as typeof mockTours);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [tourFilter, setTourFilter] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [editingBooking, setEditingBooking] = useState<BookingRecord | null>(null);
   const [viewingBooking, setViewingBooking] = useState<BookingRecord | null>(null);
-  const [deletingBookingId, setDeletingBookingId] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberForm[]>([]);
   const [roomPreferences, setRoomPreferences] = useState<RoomPreferenceForm[]>([]);
   const [advancePaidInput, setAdvancePaidInput] = useState('');
@@ -257,8 +294,8 @@ export default function BookingsPage() {
   const [documentNames, setDocumentNames] = useState<DocumentNames>({
     aadhaarFileName: '',
     panFileName: '',
-    passportFileName: '',
   });
+  const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocumentForm[]>([]);
 
   const selectedTour =
     tours.find((tour) => tour.id === selectedTourId) ??
@@ -294,26 +331,48 @@ export default function BookingsPage() {
     const mainDocuments = {
       aadhaar: fileName('aadhaar') || documentNames.aadhaarFileName,
       pan: fileName('pan') || documentNames.panFileName,
-      passport: fileName('passport') || documentNames.passportFileName,
     };
     const missingMainDocument = Object.entries(mainDocuments).find(([, value]) => !value);
 
     if (missingMainDocument) {
-      setFormError('Aadhaar, PAN, and Passport are required for the main passenger.');
+      setFormError('Aadhaar and PAN are required for the main passenger.');
       setIsSaving(false);
       return;
     }
 
     const memberMissingDocuments = familyMembers.find(
       (member) =>
-        !member.aadhaarFileName || !member.panFileName || !member.passportFileName
+        !member.aadhaarFileName || !member.panFileName
     );
 
     if (memberMissingDocuments) {
       const memberName =
         getFullName(memberMissingDocuments.firstName, memberMissingDocuments.lastName) ||
         'each family member';
-      setFormError(`Aadhaar, PAN, and Passport are required for ${memberName}.`);
+      setFormError(`Aadhaar and PAN are required for ${memberName}.`);
+      setIsSaving(false);
+      return;
+    }
+
+    const hasIncompleteMainDocument = additionalDocuments.some(
+      (document) => !document.type || !document.fileName
+    );
+
+    if (hasIncompleteMainDocument) {
+      setFormError('Please select a type and file for every additional main passenger document.');
+      setIsSaving(false);
+      return;
+    }
+
+    const memberWithIncompleteDocument = familyMembers.find((member) =>
+      member.additionalDocuments.some((document) => !document.type || !document.fileName)
+    );
+
+    if (memberWithIncompleteDocument) {
+      const memberName =
+        getFullName(memberWithIncompleteDocument.firstName, memberWithIncompleteDocument.lastName) ||
+        'the family member';
+      setFormError(`Please select a type and file for every additional document for ${memberName}.`);
       setIsSaving(false);
       return;
     }
@@ -325,13 +384,19 @@ export default function BookingsPage() {
         fullName: getFullName(member.firstName, member.lastName),
         aadhaarFileField: `family-${member.id}-aadhaar`,
         panFileField: `family-${member.id}-pan`,
-        passportFileField: `family-${member.id}-passport`,
+        additionalDocuments: member.additionalDocuments.map((document) => ({
+          ...document,
+          fileField: `family-${member.id}-document-${document.id}`,
+        })),
+      })),
+      additionalDocuments: additionalDocuments.map((document) => ({
+        ...document,
+        fileField: `document-${document.id}`,
       })),
       roomPreferences,
       totalAmount: calculatedTotalAmount,
       aadhaarFileName: mainDocuments.aadhaar,
       panFileName: mainDocuments.pan,
-      passportFileName: mainDocuments.passport,
     };
 
     Object.entries(payload).forEach(([key, value]) => {
@@ -367,6 +432,9 @@ export default function BookingsPage() {
 
       setBookings(latestBookings);
       setSearchQuery('');
+      setTourFilter('');
+      setPaymentFilter('');
+      setStatusFilter('');
       form.reset();
       setEditingBooking(null);
       setFamilyMembers([]);
@@ -375,7 +443,8 @@ export default function BookingsPage() {
       setSelectedTourId('');
       setAdultCount(1);
       setChildCount(0);
-      setDocumentNames({ aadhaarFileName: '', panFileName: '', passportFileName: '' });
+      setDocumentNames({ aadhaarFileName: '', panFileName: '' });
+      setAdditionalDocuments([]);
       setShowForm(false);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to save booking');
@@ -400,6 +469,12 @@ export default function BookingsPage() {
         aadhaarFileName: member.aadhaarFileName ?? '',
         panFileName: member.panFileName ?? '',
         passportFileName: member.passportFileName ?? '',
+        additionalDocuments:
+          member.additionalDocuments?.length
+            ? member.additionalDocuments
+            : member.passportFileName
+              ? [{ id: crypto.randomUUID(), type: 'passport', fileName: member.passportFileName }]
+              : [],
       }))
     );
     setRoomPreferences(parseRoomPreferences(booking.roomSharing));
@@ -410,8 +485,14 @@ export default function BookingsPage() {
     setDocumentNames({
       aadhaarFileName: booking.aadhaarFileName ?? '',
       panFileName: booking.panFileName ?? '',
-      passportFileName: booking.passportFileName ?? '',
     });
+    setAdditionalDocuments(
+      booking.additionalDocuments?.length
+        ? booking.additionalDocuments
+        : booking.passportFileName
+          ? [{ id: crypto.randomUUID(), type: 'passport', fileName: booking.passportFileName }]
+          : []
+    );
     setFormError('');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -425,49 +506,10 @@ export default function BookingsPage() {
     setSelectedTourId('');
     setAdultCount(1);
     setChildCount(0);
-    setDocumentNames({ aadhaarFileName: '', panFileName: '', passportFileName: '' });
+    setDocumentNames({ aadhaarFileName: '', panFileName: '' });
+    setAdditionalDocuments([]);
     setFormError('');
     setShowForm(false);
-  };
-
-  const deleteBooking = async (booking: BookingRecord) => {
-    const confirmed = window.confirm(`Delete booking ${booking.bookingCode}?`);
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingBookingId(booking.id);
-    setFormError('');
-
-    try {
-      const response = await fetch('/api/bookings', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: booking.id }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error ?? 'Unable to delete booking');
-      }
-
-      setBookings((currentBookings) =>
-        currentBookings.filter((currentBooking) => currentBooking.id !== booking.id)
-      );
-
-      if (viewingBooking?.id === booking.id) {
-        setViewingBooking(null);
-      }
-
-      if (editingBooking?.id === booking.id) {
-        closeForm();
-      }
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Unable to delete booking');
-    } finally {
-      setDeletingBookingId(null);
-    }
   };
 
   const addFamilyMember = () => {
@@ -487,6 +529,7 @@ export default function BookingsPage() {
         aadhaarFileName: '',
         panFileName: '',
         passportFileName: '',
+        additionalDocuments: [],
       },
     ]);
   };
@@ -522,7 +565,7 @@ export default function BookingsPage() {
   const updateFamilyMember = (
     id: string,
     field: keyof FamilyMemberForm,
-    value: string
+    value: string | AdditionalDocumentForm[]
   ) => {
     setFamilyMembers((currentMembers) =>
       currentMembers.map((member) =>
@@ -531,9 +574,9 @@ export default function BookingsPage() {
               ...member,
               [field]: value,
               fullName:
-                field === 'firstName'
+                field === 'firstName' && typeof value === 'string'
                   ? getFullName(value, member.lastName)
-                  : field === 'lastName'
+                  : field === 'lastName' && typeof value === 'string'
                     ? getFullName(member.firstName, value)
                     : member.fullName,
             }
@@ -548,18 +591,122 @@ export default function BookingsPage() {
     );
   };
 
-  const filteredBookings = bookings.filter(
-    (booking) =>
-      booking.travelerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      booking.bookingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      booking.phone.includes(searchQuery)
-  );
+  const addAdditionalDocument = () => {
+    setAdditionalDocuments((currentDocuments) => [
+      ...currentDocuments,
+      { id: crypto.randomUUID(), type: '', fileName: '' },
+    ]);
+  };
+
+  const updateAdditionalDocument = (
+    id: string,
+    field: keyof AdditionalDocumentForm,
+    value: string
+  ) => {
+    setAdditionalDocuments((currentDocuments) =>
+      currentDocuments.map((document) =>
+        document.id === id ? { ...document, [field]: value } : document
+      )
+    );
+  };
+
+  const removeAdditionalDocument = (id: string) => {
+    setAdditionalDocuments((currentDocuments) =>
+      currentDocuments.filter((document) => document.id !== id)
+    );
+  };
+
+  const addFamilyAdditionalDocument = (memberId: string) => {
+    setFamilyMembers((currentMembers) =>
+      currentMembers.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              additionalDocuments: [
+                ...member.additionalDocuments,
+                { id: crypto.randomUUID(), type: '', fileName: '' },
+              ],
+            }
+          : member
+      )
+    );
+  };
+
+  const updateFamilyAdditionalDocument = (
+    memberId: string,
+    documentId: string,
+    field: keyof AdditionalDocumentForm,
+    value: string
+  ) => {
+    setFamilyMembers((currentMembers) =>
+      currentMembers.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              additionalDocuments: member.additionalDocuments.map((document) =>
+                document.id === documentId ? { ...document, [field]: value } : document
+              ),
+            }
+          : member
+      )
+    );
+  };
+
+  const removeFamilyAdditionalDocument = (memberId: string, documentId: string) => {
+    setFamilyMembers((currentMembers) =>
+      currentMembers.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              additionalDocuments: member.additionalDocuments.filter(
+                (document) => document.id !== documentId
+              ),
+            }
+          : member
+      )
+    );
+  };
+
+  const filterOptions = useMemo(() => {
+    const tourNames = new Set<string>();
+
+    bookings.forEach((booking) => {
+      if (booking.tour) {
+        tourNames.add(booking.tour);
+      }
+    });
+
+    tours.forEach((tour) => {
+      if (tour.tourName) {
+        tourNames.add(tour.tourName);
+      }
+    });
+
+    return {
+      tours: Array.from(tourNames).sort((a, b) => a.localeCompare(b)),
+    };
+  }, [bookings, tours]);
+
+  const filteredBookings = bookings.filter((booking) => {
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      booking.travelerName.toLowerCase().includes(query) ||
+      booking.bookingCode.toLowerCase().includes(query) ||
+      booking.phone.includes(query);
+    const matchesTour = !tourFilter || booking.tour === tourFilter;
+    const matchesPayment =
+      !paymentFilter || normalizePaymentStatus(booking.paymentStatus) === paymentFilter;
+    const matchesStatus = !statusFilter || booking.status === statusFilter;
+
+    return matchesSearch && matchesTour && matchesPayment && matchesStatus;
+  });
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       confirmed: 'bg-green-100 text-green-800',
-      pending: 'bg-yellow-100 text-yellow-800',
       cancelled: 'bg-red-100 text-red-800',
+      refund: 'bg-purple-100 text-purple-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
@@ -571,8 +718,15 @@ export default function BookingsPage() {
       pending: 'bg-yellow-100 text-yellow-800',
       overdue: 'bg-red-100 text-red-800',
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[normalizePaymentStatus(status)] || 'bg-gray-100 text-gray-800';
   };
+
+  const filterSelectClassName = (isActive: boolean) =>
+    `h-9 w-fit max-w-full rounded-full py-0 pl-3 pr-2 [field-sizing:content] ${
+      isActive
+        ? 'border-blue-600 bg-blue-600 text-white focus:ring-blue-600'
+        : 'border-gray-300 bg-white text-gray-900'
+    }`;
 
   return (
     <MainLayout>
@@ -592,7 +746,8 @@ export default function BookingsPage() {
               setSelectedTourId('');
               setAdultCount(1);
               setChildCount(0);
-              setDocumentNames({ aadhaarFileName: '', panFileName: '', passportFileName: '' });
+              setDocumentNames({ aadhaarFileName: '', panFileName: '' });
+              setAdditionalDocuments([]);
               setFormError('');
               setShowForm(!showForm);
             }}
@@ -678,16 +833,68 @@ export default function BookingsPage() {
                       <p className="mt-1 text-xs text-gray-500">{documentNames.panFileName}</p>
                     ) : null}
                   </div>
-                  <div>
-                    <Label>Passport *</Label>
-                    <Input name="passport" type="file" required={!documentNames.passportFileName} />
-                    {documentNames.passportFileName ? (
-                      <p className="mt-1 text-xs text-gray-500">
-                        {documentNames.passportFileName}
-                      </p>
-                    ) : null}
-                  </div>
                 </div>
+                <div className="mt-4">
+                  <Button type="button" variant="outline" onClick={addAdditionalDocument}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Document
+                  </Button>
+                </div>
+                {additionalDocuments.length > 0 && (
+                  <div className="mt-4 space-y-4">
+                    {additionalDocuments.map((document, index) => (
+                      <div key={document.id} className="grid grid-cols-1 gap-4 rounded-md border p-4 md:grid-cols-3">
+                        <div>
+                          <Label>Document Type *</Label>
+                          <Select
+                            value={document.type}
+                            onChange={(event) =>
+                              updateAdditionalDocument(document.id, 'type', event.target.value)
+                            }
+                            required
+                          >
+                            <option value="">Select type</option>
+                            {ADDITIONAL_DOCUMENT_TYPES.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Document File *</Label>
+                          <Input
+                            name={`document-${document.id}`}
+                            type="file"
+                            required={!document.fileName}
+                            onChange={(event) =>
+                              event.target.files?.[0]?.name
+                                ? updateAdditionalDocument(
+                                    document.id,
+                                    'fileName',
+                                    event.target.files[0].name
+                                  )
+                                : undefined
+                            }
+                          />
+                          {document.fileName ? (
+                            <p className="mt-1 text-xs text-gray-500">{document.fileName}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex items-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => removeAdditionalDocument(document.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                            <span className="ml-2">Remove {index + 1}</span>
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -825,29 +1032,85 @@ export default function BookingsPage() {
                               <p className="mt-1 text-xs text-gray-500">{member.panFileName}</p>
                             ) : null}
                           </div>
-                          <div>
-                            <Label>Passport *</Label>
-                            <Input
-                              name={`family-${member.id}-passport`}
-                              type="file"
-                              required={!member.passportFileName}
-                              onChange={(event) =>
-                                event.target.files?.[0]?.name
-                                  ? updateFamilyMember(
-                                      member.id,
-                                      'passportFileName',
-                                      event.target.files[0].name
-                                    )
-                                  : undefined
-                              }
-                            />
-                            {member.passportFileName ? (
-                              <p className="mt-1 text-xs text-gray-500">
-                                {member.passportFileName}
-                              </p>
-                            ) : null}
-                          </div>
                         </div>
+                        <div className="mt-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => addFamilyAdditionalDocument(member.id)}
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Document
+                          </Button>
+                        </div>
+                        {member.additionalDocuments.length > 0 && (
+                          <div className="mt-4 space-y-4">
+                            {member.additionalDocuments.map((document, documentIndex) => (
+                              <div
+                                key={document.id}
+                                className="grid grid-cols-1 gap-4 rounded-md border p-4 md:grid-cols-3"
+                              >
+                                <div>
+                                  <Label>Document Type *</Label>
+                                  <Select
+                                    value={document.type}
+                                    onChange={(event) =>
+                                      updateFamilyAdditionalDocument(
+                                        member.id,
+                                        document.id,
+                                        'type',
+                                        event.target.value
+                                      )
+                                    }
+                                    required
+                                  >
+                                    <option value="">Select type</option>
+                                    {ADDITIONAL_DOCUMENT_TYPES.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </Select>
+                                </div>
+                                <div>
+                                  <Label>Document File *</Label>
+                                  <Input
+                                    name={`family-${member.id}-document-${document.id}`}
+                                    type="file"
+                                    required={!document.fileName}
+                                    onChange={(event) =>
+                                      event.target.files?.[0]?.name
+                                        ? updateFamilyAdditionalDocument(
+                                            member.id,
+                                            document.id,
+                                            'fileName',
+                                            event.target.files[0].name
+                                          )
+                                        : undefined
+                                    }
+                                  />
+                                  {document.fileName ? (
+                                    <p className="mt-1 text-xs text-gray-500">
+                                      {document.fileName}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="flex items-end">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      removeFamilyAdditionalDocument(member.id, document.id)
+                                    }
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                    <span className="ml-2">Remove {documentIndex + 1}</span>
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1099,6 +1362,16 @@ export default function BookingsPage() {
                       defaultValue={editingBooking?.bookedBy ?? ''}
                     />
                   </div>
+                  <div>
+                    <Label>Booking Status</Label>
+                    <Select name="status" defaultValue={editingBooking?.status ?? 'confirmed'}>
+                      {BOOKING_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
               </div>
 
@@ -1122,16 +1395,6 @@ export default function BookingsPage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Search */}
-      <div className="flex gap-2">
-        <Input
-          placeholder="Search by name, booking code, or phone..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-md"
-        />
-      </div>
 
       {viewingBooking && (
         <Card>
@@ -1223,6 +1486,70 @@ export default function BookingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-2">
+            <Input
+              placeholder="Search by name, booking code, or phone..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`h-9 w-full rounded-full sm:w-72 ${
+                searchQuery
+                  ? 'border-blue-600 bg-blue-50 text-blue-900 focus:ring-blue-600'
+                  : ''
+              }`}
+            />
+            <Select
+              value={tourFilter}
+              onChange={(event) => setTourFilter(event.target.value)}
+              className={filterSelectClassName(Boolean(tourFilter))}
+            >
+              <option value="">Tours</option>
+              {filterOptions.tours.map((tourName) => (
+                <option key={tourName} value={tourName}>
+                  {tourName}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={paymentFilter}
+              onChange={(event) => setPaymentFilter(event.target.value)}
+              className={filterSelectClassName(Boolean(paymentFilter))}
+            >
+              <option value="">Payments</option>
+              {PAYMENT_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className={filterSelectClassName(Boolean(statusFilter))}
+            >
+              <option value="">Booking Status</option>
+              {BOOKING_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+            {(searchQuery || tourFilter || paymentFilter || statusFilter) ? (
+              <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchQuery('');
+                setTourFilter('');
+                setPaymentFilter('');
+                setStatusFilter('');
+              }}
+              className="h-9 rounded-full"
+            >
+              Clear filters
+            </Button>
+            ) : null}
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -1255,7 +1582,7 @@ export default function BookingsPage() {
                     </TableCell>
                     <TableCell>
                       <Badge className={getPaymentStatusColor(booking.paymentStatus)}>
-                        {booking.paymentStatus}
+                        {formatStatusLabel(normalizePaymentStatus(booking.paymentStatus))}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -1267,11 +1594,12 @@ export default function BookingsPage() {
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="outline"
                           title="View"
                           onClick={() => setViewingBooking(booking)}
                         >
                           <Eye size={16} />
+                          <span className="ml-2">View</span>
                         </Button>
                         <Button
                           size="sm"
@@ -1280,15 +1608,6 @@ export default function BookingsPage() {
                           onClick={() => startEditingBooking(booking)}
                         >
                           <Edit2 size={16} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Delete"
-                          disabled={deletingBookingId === booking.id}
-                          onClick={() => deleteBooking(booking)}
-                        >
-                          <Trash2 size={16} className="text-red-600" />
                         </Button>
                       </div>
                     </TableCell>

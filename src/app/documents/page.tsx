@@ -47,7 +47,7 @@ const mockDocuments = [
     fileName: 'rajesh_passport.pdf',
     uploadedAt: '2026-04-20',
     expiryDate: '2030-06-15',
-    status: 'verified',
+    status: 'pending',
     tour: 'Thailand May Batch',
   },
   {
@@ -67,7 +67,7 @@ const mockDocuments = [
     fileName: 'amit_passport.pdf',
     uploadedAt: '2026-04-18',
     expiryDate: '2031-09-10',
-    status: 'verified',
+    status: 'pending',
     tour: 'Kashmir June Batch',
   },
 ];
@@ -147,7 +147,6 @@ export default function DocumentsPage() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      verified: 'bg-green-100 text-green-800',
       pending: 'bg-yellow-100 text-yellow-800',
       expired: 'bg-red-100 text-red-800',
     };
@@ -161,6 +160,7 @@ export default function DocumentsPage() {
       aadhaar: 'bg-orange-100 text-orange-800',
       pan: 'bg-green-100 text-green-800',
       visa: 'bg-purple-100 text-purple-800',
+      photo: 'bg-sky-100 text-sky-800',
       ticket: 'bg-pink-100 text-pink-800',
     };
 
@@ -209,6 +209,7 @@ export default function DocumentsPage() {
                     <option value="pan">PAN</option>
                     <option value="passport">Passport</option>
                     <option value="visa">Visa</option>
+                    <option value="photo">Photo</option>
                     <option value="ticket">Ticket</option>
                   </select>
                 </div>
@@ -222,7 +223,6 @@ export default function DocumentsPage() {
                   <Label>Status</Label>
                   <select name="status" className="border rounded px-3 h-10 w-full">
                     <option value="pending">Pending</option>
-                    <option value="verified">Verified</option>
                     <option value="expired">Expired</option>
                   </select>
                 </div>
@@ -252,20 +252,11 @@ export default function DocumentsPage() {
           </Card>
         )}
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardContent className="pt-6 text-center">
               <p>Total Documents</p>
               <p className="text-2xl font-bold">{documents.length}</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <p>Verified</p>
-              <p className="text-2xl font-bold text-green-600">
-                {documents.filter((d) => d.status === 'verified').length}
-              </p>
             </CardContent>
           </Card>
 
@@ -304,6 +295,8 @@ export default function DocumentsPage() {
             <option value="passport">Passport</option>
             <option value="aadhaar">Aadhaar</option>
             <option value="pan">PAN</option>
+            <option value="visa">Visa</option>
+            <option value="photo">Photo</option>
           </select>
 
           <select
@@ -312,7 +305,6 @@ export default function DocumentsPage() {
             className="border rounded px-3"
           >
             <option value="">All Status</option>
-            <option value="verified">Verified</option>
             <option value="pending">Pending</option>
             <option value="expired">Expired</option>
           </select>

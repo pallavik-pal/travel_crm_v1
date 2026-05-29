@@ -65,6 +65,14 @@ const getOptionalDate = (value: unknown) =>
 const getOptionalString = (value: unknown) =>
   typeof value === 'string' && value ? value : null;
 
+const BOOKING_STATUSES = new Set(['confirmed', 'cancelled', 'refund']);
+
+const getBookingStatus = (value: unknown, fallback = 'confirmed') => {
+  const status = getOptionalString(value);
+
+  return status && BOOKING_STATUSES.has(status) ? status : fallback;
+};
+
 const getRequestBody = async (request: Request) => {
   const contentType = request.headers.get('content-type') ?? '';
 
@@ -87,7 +95,7 @@ const getRequestBody = async (request: Request) => {
       return;
     }
 
-    if ((key === 'familyMembers' || key === 'roomPreferences') && value) {
+    if ((key === 'familyMembers' || key === 'roomPreferences' || key === 'additionalDocuments') && value) {
       try {
         body[key] = JSON.parse(value);
       } catch {
@@ -173,19 +181,26 @@ const getFamilyDocuments = async (members: unknown, files: Map<string, File>) =>
       continue;
     }
 
-    const record = member as Record<string, string>;
+    const record = member as Record<string, unknown>;
     const passengerName =
-      record.fullName?.trim() ||
-      [record.firstName?.trim(), record.lastName?.trim()].filter(Boolean).join(' ');
+      (typeof record.fullName === 'string' ? record.fullName.trim() : '') ||
+      [
+        typeof record.firstName === 'string' ? record.firstName.trim() : '',
+        typeof record.lastName === 'string' ? record.lastName.trim() : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
     const aadhaar = await getUploadedDocument(
-      files.get(record.aadhaarFileField),
+      files.get(typeof record.aadhaarFileField === 'string' ? record.aadhaarFileField : ''),
       record.aadhaarFileName
     );
-    const pan = await getUploadedDocument(files.get(record.panFileField), record.panFileName);
-    const passport = await getUploadedDocument(
-      files.get(record.passportFileField),
-      record.passportFileName
+    const pan = await getUploadedDocument(
+      files.get(typeof record.panFileField === 'string' ? record.panFileField : ''),
+      record.panFileName
     );
+    const additionalDocuments = Array.isArray(record.additionalDocuments)
+      ? record.additionalDocuments
+      : [];
 
     const memberDocuments: DocumentInput[] = [];
 
@@ -197,8 +212,24 @@ const getFamilyDocuments = async (members: unknown, files: Map<string, File>) =>
       memberDocuments.push({ type: 'pan', passengerName, ...pan });
     }
 
-    if (passport) {
-      memberDocuments.push({ type: 'passport', passengerName, ...passport });
+    for (const additionalDocument of additionalDocuments) {
+      if (typeof additionalDocument !== 'object' || additionalDocument === null) {
+        continue;
+      }
+
+      const additionalRecord = additionalDocument as Record<string, string>;
+      const uploadedDocument = await getUploadedDocument(
+        files.get(additionalRecord.fileField),
+        additionalRecord.fileName
+      );
+
+      if (additionalRecord.type && uploadedDocument) {
+        memberDocuments.push({
+          type: additionalRecord.type,
+          passengerName,
+          ...uploadedDocument,
+        });
+      }
     }
 
     documents.push(...memberDocuments);
@@ -215,7 +246,9 @@ const getDocumentsFromBody = async (
   const documents: DocumentInput[] = [];
   const aadhaar = await getUploadedDocument(files.get('aadhaar'), body.aadhaarFileName);
   const pan = await getUploadedDocument(files.get('pan'), body.panFileName);
-  const passport = await getUploadedDocument(files.get('passport'), body.passportFileName);
+  const additionalDocuments = Array.isArray(body.additionalDocuments)
+    ? body.additionalDocuments
+    : [];
 
   if (aadhaar) {
     documents.push({ type: 'aadhaar', passengerName, ...aadhaar });
@@ -225,8 +258,17 @@ const getDocumentsFromBody = async (
     documents.push({ type: 'pan', passengerName, ...pan });
   }
 
-  if (passport) {
-    documents.push({ type: 'passport', passengerName, ...passport });
+  for (const additionalDocument of additionalDocuments) {
+    if (typeof additionalDocument !== 'object' || additionalDocument === null) {
+      continue;
+    }
+
+    const record = additionalDocument as Record<string, string>;
+    const uploadedDocument = await getUploadedDocument(files.get(record.fileField), record.fileName);
+
+    if (record.type && uploadedDocument) {
+      documents.push({ type: record.type, passengerName, ...uploadedDocument });
+    }
   }
 
   documents.push(...(await getFamilyDocuments(body.familyMembers, files)));
@@ -287,7 +329,7 @@ const saveDocuments = async (bookingId: string, documents: DocumentInput[]) => {
 };
 
 const hasRequiredDocuments = (documents: DocumentInput[], passengerName: string) =>
-  ['aadhaar', 'pan', 'passport'].every((type) =>
+  ['aadhaar', 'pan'].every((type) =>
     documents.some(
       (document) =>
         document.passengerName === passengerName &&
@@ -339,6 +381,7 @@ export async function POST(request: Request) {
   const totalAmount = Number(body.totalAmount);
   const advancePaid = Number(body.advancePaid);
   const balanceAmount = Math.max(totalAmount - advancePaid, 0);
+  const bookingStatus = getBookingStatus(body.status);
 
   const firstSerialNumber = await getNextTourSerialNumber(tour.id);
   const traveler = await prisma.traveler.create({
@@ -362,7 +405,7 @@ export async function POST(request: Request) {
       pickupPoint: getOptionalString(body.pickupPoint),
       seatNumber: getOptionalString(body.seatNumber),
       roomSharingPreference: serializeRoomPreferences(body.roomPreferences),
-      status: 'confirmed',
+      status: bookingStatus,
     },
   });
 
@@ -377,7 +420,7 @@ export async function POST(request: Request) {
   if (missingDocumentPassenger) {
     return NextResponse.json(
       {
-        error: `Aadhaar, PAN, and Passport are required for ${missingDocumentPassenger}.`,
+        error: `Aadhaar and PAN are required for ${missingDocumentPassenger}.`,
       },
       { status: 400 }
     );
@@ -486,7 +529,7 @@ export async function PATCH(request: Request) {
       pickupPoint: getOptionalString(body.pickupPoint),
       seatNumber: getOptionalString(body.seatNumber),
       roomSharingPreference: serializeRoomPreferences(body.roomPreferences),
-      status: getOptionalString(body.status) ?? booking.status,
+      status: getBookingStatus(body.status, booking.status),
     },
   });
 
@@ -558,7 +601,7 @@ export async function PATCH(request: Request) {
   if (missingDocumentPassenger) {
     return NextResponse.json(
       {
-        error: `Aadhaar, PAN, and Passport are required for ${missingDocumentPassenger}.`,
+        error: `Aadhaar and PAN are required for ${missingDocumentPassenger}.`,
       },
       { status: 400 }
     );

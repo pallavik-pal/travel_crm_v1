@@ -8,6 +8,8 @@ const toAmount = (value: unknown) => {
   return Number.isFinite(amount) ? Math.round(amount) : NaN;
 };
 
+const isPaymentLog = (logType?: string | null) => !logType || logType === 'payment';
+
 const getCategories = async (tourId: string) => {
   const existingCategories = await prisma.operationsPaymentCategory.findMany({
     where: { tourId },
@@ -91,14 +93,22 @@ export async function GET(request: Request) {
 
   return NextResponse.json(
     categories
-      .sort(
-        (first, second) =>
-          DEFAULT_CATEGORIES.indexOf(first.categoryName) -
-          DEFAULT_CATEGORIES.indexOf(second.categoryName)
-      )
+      .sort((first, second) => {
+        const firstIndex = DEFAULT_CATEGORIES.indexOf(first.categoryName);
+        const secondIndex = DEFAULT_CATEGORIES.indexOf(second.categoryName);
+
+        if (firstIndex !== -1 && secondIndex !== -1) {
+          return firstIndex - secondIndex;
+        }
+
+        if (firstIndex !== -1) return -1;
+        if (secondIndex !== -1) return 1;
+
+        return first.categoryName.localeCompare(second.categoryName);
+      })
       .map((category) => {
         const totalPaid = category.paymentLogs.reduce(
-          (sum, log) => sum + log.amountPaid,
+          (sum, log) => sum + (isPaymentLog(log.logType) ? log.amountPaid : 0),
           0
         );
 
@@ -112,6 +122,10 @@ export async function GET(request: Request) {
             id: log.id,
             amountPaid: log.amountPaid,
             utrNumber: log.utrNumber,
+            pax: log.pax ?? '',
+            tripType: log.tripType ?? '',
+            totalAdded: log.totalAdded ?? 0,
+            logType: log.logType,
             createdAt: log.createdAt,
           })),
         };
@@ -121,6 +135,48 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json();
+
+  if (body.action === 'create-category') {
+    const tourId = String(body.tourId || '').trim();
+    const categoryName = String(body.categoryName || '').trim();
+    const totalAmount =
+      body.totalAmount === undefined || body.totalAmount === ''
+        ? 0
+        : toAmount(body.totalAmount);
+
+    if (!tourId || !categoryName || Number.isNaN(totalAmount) || totalAmount < 0) {
+      return NextResponse.json(
+        { error: 'Tour, category name, and valid total amount are required' },
+        { status: 400 }
+      );
+    }
+
+    const existingCategory = await prisma.operationsPaymentCategory.findUnique({
+      where: {
+        tourId_categoryName: {
+          tourId,
+          categoryName,
+        },
+      },
+    });
+
+    if (existingCategory) {
+      return NextResponse.json(
+        { error: 'A payment card with this name already exists for the selected tour' },
+        { status: 400 }
+      );
+    }
+
+    const category = await prisma.operationsPaymentCategory.create({
+      data: {
+        tourId,
+        categoryName,
+        totalAmount,
+      },
+    });
+
+    return NextResponse.json(category);
+  }
 
   if (body.action === 'set-total') {
     const totalAmount = toAmount(body.totalAmount);
@@ -136,6 +192,59 @@ export async function POST(request: Request) {
       where: { id: body.categoryId },
       data: {
         totalAmount,
+      },
+    });
+
+    return NextResponse.json(updated);
+  }
+
+  if (body.action === 'add-flight-pax-total') {
+    const totalAmount = toAmount(body.totalAmount);
+    const pax = String(body.pax || '').trim();
+    const utrNumber = String(body.utrNumber || '').trim();
+    const tripType = String(body.tripType || '').trim();
+
+    if (
+      !body.categoryId ||
+      !pax ||
+      !utrNumber ||
+      !tripType ||
+      Number.isNaN(totalAmount) ||
+      totalAmount <= 0
+    ) {
+      return NextResponse.json(
+        { error: 'Valid total payment, pax, UTR, and trip type are required' },
+        { status: 400 }
+      );
+    }
+
+    const category = await prisma.operationsPaymentCategory.findUnique({
+      where: { id: body.categoryId },
+    });
+
+    if (!category) {
+      return NextResponse.json(
+        { error: 'Payment category was not found' },
+        { status: 404 }
+      );
+    }
+
+    const updated = await prisma.operationsPaymentCategory.update({
+      where: { id: body.categoryId },
+      data: {
+        totalAmount: category.totalAmount + totalAmount,
+      },
+    });
+
+    await prisma.operationsPaymentLog.create({
+      data: {
+        categoryId: body.categoryId,
+        amountPaid: 0,
+        utrNumber,
+        pax,
+        tripType,
+        totalAdded: totalAmount,
+        logType: 'flight_pax_total',
       },
     });
 
@@ -166,7 +275,7 @@ export async function POST(request: Request) {
     }
 
     const totalPaid = category.paymentLogs.reduce(
-      (sum, log) => sum + log.amountPaid,
+      (sum, log) => sum + (isPaymentLog(log.logType) ? log.amountPaid : 0),
       0
     );
     const amountYetToPay = category.totalAmount - totalPaid;
@@ -190,6 +299,7 @@ export async function POST(request: Request) {
         categoryId: body.categoryId,
         amountPaid,
         utrNumber,
+        logType: 'payment',
       },
     });
 
