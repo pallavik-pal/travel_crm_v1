@@ -23,32 +23,34 @@ export async function POST(request: Request) {
 
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
+    include: { customerPaymentLogs: true },
   });
 
   if (!payment) {
     return NextResponse.json({ error: 'Payment was not found' }, { status: 404 });
   }
 
-  if (amountPaid > payment.balanceAmount) {
+  const clearancePaid = payment.customerPaymentLogs.reduce(
+    (sum, log) => sum + log.amountPaid,
+    0
+  );
+  const currentBalance = Math.max(payment.totalAmount - payment.advancePaid - clearancePaid, 0);
+
+  if (amountPaid > currentBalance) {
     return NextResponse.json(
       { error: 'Payment amount cannot be more than the pending balance' },
       { status: 400 }
     );
   }
 
-  const advancePaid = payment.advancePaid + amountPaid;
-  const balanceAmount = Math.max(payment.totalAmount - advancePaid, 0);
-  const status = balanceAmount === 0 ? 'completed' : 'partial';
+  const balanceAmount = Math.max(currentBalance - amountPaid, 0);
+  const status = balanceAmount === 0 ? 'paid' : 'partial';
 
   await prisma.payment.update({
     where: { id: paymentId },
     data: {
-      advancePaid,
       balanceAmount,
       status,
-      paymentDate,
-      paymentMode,
-      transactionId: transactionId || payment.transactionId,
     },
   });
 

@@ -13,6 +13,7 @@ export const ROUTES = {
   DOCUMENTS: '/documents',
   REPORTS: '/reports',
   SETTINGS: '/settings',
+  EMPLOYEE_ACCESS: '/employee-access',
 } as const;
 
 export const STATUS_COLORS = {

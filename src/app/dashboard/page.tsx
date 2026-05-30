@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
     AlertCircle,
@@ -80,18 +81,27 @@ const mockPendingPayments = [
 const mockOperationAlerts = [
   {
     id: 1,
+    bookingId: '1',
+    tourId: '1',
+    tourName: 'Thailand May Batch',
     title: 'Ticket not issued',
     traveler: 'Rajesh Kumar',
     severity: 'high',
   },
   {
     id: 2,
+    bookingId: '2',
+    tourId: '2',
+    tourName: 'Kashmir June Batch',
     title: 'Hotel pending',
     traveler: 'Priya Singh',
     severity: 'medium',
   },
   {
     id: 3,
+    bookingId: '3',
+    tourId: '1',
+    tourName: 'Thailand May Batch',
     title: 'Visa not approved',
     traveler: 'Amit Patel',
     severity: 'high',
@@ -165,6 +175,24 @@ const StatCard = ({
 
 function DashboardContent() {
   const [dashboard] = useRecords('/api/dashboard', emptyDashboard);
+  const [selectedAlertTourId, setSelectedAlertTourId] = useState('');
+  const alertTourOptions = useMemo(() => {
+    const tours = new Map<string, string>();
+
+    dashboard.operationAlerts.forEach((alert) => {
+      if (alert.tourId && alert.tourName) {
+        tours.set(alert.tourId, alert.tourName);
+      }
+    });
+
+    return Array.from(tours, ([id, name]) => ({ id, name })).sort((first, second) =>
+      first.name.localeCompare(second.name)
+    );
+  }, [dashboard.operationAlerts]);
+  const activeAlertTourId = selectedAlertTourId || alertTourOptions[0]?.id || '';
+  const filteredOperationAlerts = activeAlertTourId
+    ? dashboard.operationAlerts.filter((alert) => alert.tourId === activeAlertTourId)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -203,66 +231,109 @@ function DashboardContent() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Upcoming Tours */}
+        {/* Operations Alerts */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Upcoming Tours</CardTitle>
-              <CardDescription>Active tour batches and occupancy</CardDescription>
+              <CardTitle className="flex items-center space-x-2">
+                <AlertCircle size={20} className="text-red-600" />
+                <span>Operations Alerts</span>
+              </CardTitle>
+              <CardDescription>Critical operations issues needing attention</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {dashboard.tours.map((tour) => (
-                  <Link
-                    key={tour.id}
-                    href={`/tours/${tour.id}`}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{tour.name}</h3>
-                      <p className="text-sm text-gray-600">
-                        Departure: {formatDate(tour.departure)}
-                      </p>
-                      <div className="mt-2 flex items-center space-x-2">
-                        <div className="flex-1 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full"
-                            style={{ width: `${(tour.seats / tour.totalSeats) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium text-gray-700">
-                          {tour.seats}/{tour.totalSeats}
-                        </span>
-                      </div>
-                    </div>
-                    <Badge variant="default">
-                      {tour.paymentCompletion}%
-                    </Badge>
-                  </Link>
-                ))}
+              <div className="mb-4 max-w-sm">
+                <select
+                  value={activeAlertTourId}
+                  onChange={(event) => setSelectedAlertTourId(event.target.value)}
+                  className="h-10 w-full rounded border px-3 text-sm"
+                >
+                  {alertTourOptions.length ? null : (
+                    <option value="">No pending operations</option>
+                  )}
+                  {alertTourOptions.map((tour) => (
+                    <option key={tour.id} value={tour.id}>
+                      {tour.name}
+                    </option>
+                  ))}
+                </select>
               </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Alert</TableHead>
+                    <TableHead>Traveler</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredOperationAlerts.map((alert) => (
+                    <TableRow key={alert.id}>
+                      <TableCell className="font-medium">{alert.title}</TableCell>
+                      <TableCell>{alert.traveler}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={alert.severity === 'high' ? 'destructive' : 'warning'}
+                        >
+                          {alert.severity}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/bookings?edit=${alert.bookingId}`}>Review</Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {!filteredOperationAlerts.length ? (
+                <div className="rounded border bg-gray-50 px-4 py-6 text-center text-sm text-gray-600">
+                  No pending operations for this tour.
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>
 
-        {/* Quick Actions */}
+        {/* Upcoming Tours */}
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
+            <CardTitle>Upcoming Tours</CardTitle>
+            <CardDescription>Active tour batches and occupancy</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <Button className="w-full" variant="default" asChild>
-              <Link href="/tours?action=create">Create New Tour</Link>
-            </Button>
-            <Button className="w-full" variant="outline" asChild>
-              <Link href="/bookings?action=create">Add Booking</Link>
-            </Button>
-            <Button className="w-full" variant="outline" asChild>
-              <Link href="/payments">Record Payment</Link>
-            </Button>
-            <Button className="w-full" variant="outline">
-              Send Reminders
-            </Button>
+          <CardContent>
+            <div className="space-y-3">
+              {dashboard.tours.map((tour) => (
+                <Link
+                  key={tour.id}
+                  href={`/tours/${tour.id}`}
+                  className="block rounded-lg border p-3 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{tour.name}</h3>
+                      <p className="text-sm text-gray-600">
+                        {formatDate(tour.departure)}
+                      </p>
+                    </div>
+                    <Badge variant="default">{tour.paymentCompletion}%</Badge>
+                  </div>
+                  <div className="mt-3 flex items-center space-x-2">
+                    <div className="flex-1 bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full"
+                        style={{ width: `${(tour.seats / tour.totalSeats) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium text-gray-700">
+                      {tour.seats}/{tour.totalSeats}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -345,48 +416,6 @@ function DashboardContent() {
         </Card>
       </div>
 
-      {/* Operations Alerts */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <AlertCircle size={20} className="text-red-600" />
-            <span>Operations Alerts</span>
-          </CardTitle>
-          <CardDescription>Critical operations issues needing attention</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Alert</TableHead>
-                <TableHead>Traveler</TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead>Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dashboard.operationAlerts.map((alert) => (
-                <TableRow key={alert.id}>
-                  <TableCell className="font-medium">{alert.title}</TableCell>
-                  <TableCell>{alert.traveler}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={alert.severity === 'high' ? 'destructive' : 'warning'}
-                    >
-                      {alert.severity}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button size="sm" variant="outline">
-                      Review
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 }

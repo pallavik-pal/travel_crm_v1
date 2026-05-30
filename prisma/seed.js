@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { PrismaClient } = require('@prisma/client');
+const crypto = require('crypto');
 
 const prisma = new PrismaClient();
 
 const date = (value) => new Date(`${value}T00:00:00.000Z`);
+const hashPassword = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
 async function main() {
   await prisma.roomAllocation.deleteMany();
@@ -31,7 +33,21 @@ async function main() {
     data: {
       email: 'admin@example.com',
       name: 'CRM Admin',
+      username: 'employee',
+      password: hashPassword('employee123'),
       role: 'admin',
+      access: [
+        'dashboard',
+        'tours',
+        'bookings',
+        'travelers',
+        'payments',
+        'customer-payments',
+        'operations',
+        'documents',
+        'reports',
+        'settings',
+      ],
     },
   });
 

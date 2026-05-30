@@ -10,7 +10,19 @@ const documentMetadataSelect = {
   status: true,
 } as const;
 
-const hasTourEnded = (returnDate: Date) => returnDate.getTime() < Date.now();
+const startOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return today;
+};
+
+const hasTourEnded = (returnDate: Date) => {
+  const returnDay = new Date(returnDate);
+  returnDay.setHours(0, 0, 0, 0);
+
+  return returnDay.getTime() < startOfToday().getTime();
+};
 
 export const tourStatusForReturnDate = (returnDate: Date, status: string) =>
   hasTourEnded(returnDate) ? 'completed' : status;
@@ -18,7 +30,7 @@ export const tourStatusForReturnDate = (returnDate: Date, status: string) =>
 const completeEndedTours = async () => {
   await prisma.tour.updateMany({
     where: {
-      returnDate: { lt: new Date() },
+      returnDate: { lt: startOfToday() },
       status: { not: 'completed' },
     },
     data: {
@@ -181,13 +193,24 @@ export async function getBookings() {
       members: true,
       documents: { select: documentMetadataSelect },
       operationsStatus: true,
-      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      payments: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        include: { customerPaymentLogs: true },
+      },
     },
     orderBy: { createdAt: 'desc' },
   });
 
   return bookings.map((booking) => {
     const payment = booking.payments[0];
+    const clearancePaid =
+      payment?.customerPaymentLogs.reduce((sum, log) => sum + log.amountPaid, 0) ?? 0;
+    const totalPaid = (payment?.advancePaid ?? 0) + clearancePaid;
+    const balance = Math.max(
+      (payment?.totalAmount ?? booking.tour.packagePrice) - totalPaid,
+      0
+    );
     const usedDocumentIds = new Set<string>();
     const documentFileName = (passengerName: string, type: string, useLegacyFallback = false) => {
       const exactDocument = booking.documents.find(
@@ -274,8 +297,8 @@ export async function getBookings() {
       roomSharing: booking.roomSharingPreference ?? '',
       pickupPoint: booking.pickupPoint ?? '',
       totalAmount: payment?.totalAmount ?? booking.tour.packagePrice,
-      advancePaid: payment?.advancePaid ?? 0,
-      balance: payment?.balanceAmount ?? booking.tour.packagePrice,
+      advancePaid: totalPaid,
+      balance,
       paymentDate: payment?.paymentDate?.toISOString() ?? '',
       dueDate: payment?.dueDate.toISOString() ?? '',
       paymentMode: payment?.paymentMode ?? '',
@@ -284,7 +307,7 @@ export async function getBookings() {
       flightStatus: booking.operationsStatus?.flightStatus ?? '',
       visaStatus: booking.operationsStatus?.visaStatus ?? '',
       hotelStatus: booking.operationsStatus?.hotelStatus ?? '',
-      paymentStatus: payment?.status ?? 'pending',
+      paymentStatus: balance === 0 ? 'paid' : payment?.status ?? 'pending',
       status: booking.status,
     };
   });
@@ -339,35 +362,57 @@ export async function getPayments() {
         },
       },
       customerPaymentLogs: {
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'asc' },
       },
     },
     orderBy: { dueDate: 'asc' },
   });
 
-  return payments.map((payment) => ({
-    id: payment.id,
-    bookingCode: payment.booking.bookingCode,
-    travelerName: payment.booking.traveler.fullName,
-    familyMembers: payment.booking.members
-      .map((member) => member.fullName)
-      .sort((first, second) => first.localeCompare(second)),
-    tour: payment.booking.tour.tourName,
-    totalAmount: payment.totalAmount,
-    advancePaid: payment.advancePaid,
-    balance: payment.balanceAmount,
-    dueDate: payment.dueDate.toISOString(),
-    status: payment.balanceAmount === 0 ? 'completed' : payment.status,
-    paymentMode: payment.paymentMode.replace('_', ' '),
-    logs: payment.customerPaymentLogs.map((log) => ({
-      id: log.id,
-      amountPaid: log.amountPaid,
-      paymentDate: log.paymentDate.toISOString(),
-      paymentMode: log.paymentMode.replace('_', ' '),
-      transactionId: log.transactionId ?? '',
-      createdAt: log.createdAt.toISOString(),
-    })),
-  }));
+  return payments.map((payment) => {
+    const clearancePaid = payment.customerPaymentLogs.reduce(
+      (sum, log) => sum + log.amountPaid,
+      0
+    );
+    const balance = Math.max(payment.totalAmount - payment.advancePaid - clearancePaid, 0);
+    const passengerNames = [
+      {
+        name: payment.booking.traveler.fullName,
+        serialNumber: payment.booking.traveler.serialNumber,
+      },
+      ...payment.booking.members.map((member) => ({
+        name: member.fullName,
+        serialNumber: member.serialNumber ?? Number.MAX_SAFE_INTEGER,
+      })),
+    ]
+      .sort((first, second) => first.serialNumber - second.serialNumber)
+      .map((passenger) => passenger.name);
+
+    return {
+      id: payment.id,
+      bookingCode: payment.booking.bookingCode,
+      travelerName: payment.booking.traveler.fullName,
+      passengerNames,
+      familyMembers: payment.booking.members
+        .map((member) => member.fullName)
+        .sort((first, second) => first.localeCompare(second)),
+      tour: payment.booking.tour.tourName,
+      totalAmount: payment.totalAmount,
+      advancePaid: payment.advancePaid,
+      balance,
+      dueDate: payment.dueDate.toISOString(),
+      status: balance === 0 ? 'paid' : payment.status,
+      paymentMode: payment.paymentMode.replace('_', ' '),
+      transactionId: payment.transactionId ?? '',
+      logs: payment.customerPaymentLogs.map((log) => ({
+        id: log.id,
+        amountPaid: log.amountPaid,
+        paymentDate: log.paymentDate.toISOString(),
+        paymentMode: log.paymentMode.replace('_', ' '),
+        transactionId: log.transactionId ?? '',
+        createdAt: log.createdAt.toISOString(),
+      })),
+    };
+  });
 }
 
 export async function getDocuments() {
@@ -534,20 +579,26 @@ export async function getDashboard() {
       pendingPayments: payments.filter((payment) => payment.balance > 0).length,
       upcomingDepartures: tours.filter((tour) => new Date(tour.departureDate) >= new Date()).length,
     },
-    tours: tours.map((tour) => {
-      const tourPayments = payments.filter((payment) => payment.tour === tour.tourName);
-      const total = tourPayments.reduce((sum, payment) => sum + payment.totalAmount, 0);
-      const collected = tourPayments.reduce((sum, payment) => sum + payment.advancePaid, 0);
+    tours: tours
+      .filter(
+        (tour) =>
+          tour.status !== 'completed' &&
+          new Date(tour.departureDate) >= startOfToday()
+      )
+      .map((tour) => {
+        const tourPayments = payments.filter((payment) => payment.tour === tour.tourName);
+        const total = tourPayments.reduce((sum, payment) => sum + payment.totalAmount, 0);
+        const collected = tourPayments.reduce((sum, payment) => sum + payment.advancePaid, 0);
 
-      return {
-        id: tour.id,
-        name: tour.tourName,
-        departure: tour.departureDate,
-        seats: tour.occupiedSeats,
-        totalSeats: tour.totalSeats,
-        paymentCompletion: total > 0 ? Math.round((collected / total) * 100) : 0,
-      };
-    }),
+        return {
+          id: tour.id,
+          name: tour.tourName,
+          departure: tour.departureDate,
+          seats: tour.occupiedSeats,
+          totalSeats: tour.totalSeats,
+          paymentCompletion: total > 0 ? Math.round((collected / total) * 100) : 0,
+        };
+      }),
     pendingPayments: payments
       .filter((payment) => payment.balance > 0)
       .map((payment) => ({
@@ -558,23 +609,35 @@ export async function getDashboard() {
         status: payment.status,
       })),
     operationAlerts: operationsTours.flatMap((tour) =>
-      tour.travelers
-        .filter(
-          (traveler) =>
-            !traveler.ticketIssued ||
-            traveler.hotelStatus === 'pending' ||
-            traveler.visaStatus === 'pending'
-        )
-        .map((traveler) => ({
-          id: `${tour.id}-${traveler.id}`,
-          title: !traveler.ticketIssued
-            ? 'Ticket not issued'
-            : traveler.hotelStatus === 'pending'
-              ? 'Hotel pending'
-              : 'Visa not approved',
-          traveler: traveler.name,
-          severity: !traveler.ticketIssued ? 'high' : 'medium',
-        }))
+      tour.travelers.flatMap((traveler) => {
+        const alerts = [];
+
+        if (traveler.flightStatus !== 'confirmed') {
+          alerts.push({
+            id: `${tour.id}-${traveler.id}-flight`,
+            bookingId: traveler.id,
+            tourId: tour.id,
+            tourName: tour.name,
+            title: 'Flight not booked',
+            traveler: traveler.name,
+            severity: 'high',
+          });
+        }
+
+        if (traveler.hotelStatus !== 'confirmed') {
+          alerts.push({
+            id: `${tour.id}-${traveler.id}-hotel`,
+            bookingId: traveler.id,
+            tourId: tour.id,
+            tourName: tour.name,
+            title: 'Hotel not booked',
+            traveler: traveler.name,
+            severity: 'medium',
+          });
+        }
+
+        return alerts;
+      })
     ),
     pendingDocuments: travelers
       .map((traveler) => ({

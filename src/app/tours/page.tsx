@@ -22,8 +22,7 @@ import {
 } from '@/components/ui/table';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
-import { Archive, Edit2, Eye, Plus, X } from 'lucide-react';
-import Link from 'next/link';
+import { Edit2, Eye, Plus, X } from 'lucide-react';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 const mockTours = [
@@ -73,6 +72,16 @@ const mockTours = [
     status: 'draft',
   },
 ];
+
+const getAutomaticTourStatus = (returnDate: string, status: string) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const returnDay = new Date(returnDate);
+  returnDay.setHours(0, 0, 0, 0);
+
+  return returnDay.getTime() < today.getTime() ? 'completed' : status;
+};
 
 function FilterSelect({
   label,
@@ -127,12 +136,21 @@ export default function ToursPage() {
   const [tours, setTours] = useRecords('/api/tours', [] as typeof mockTours);
   const [showForm, setShowForm] = useState(false);
   const [editingTour, setEditingTour] = useState<(typeof mockTours)[number] | null>(null);
+  const [viewingTour, setViewingTour] = useState<(typeof mockTours)[number] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [destinationFilter, setDestinationFilter] = useState('');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const displayTours = useMemo(
+    () =>
+      tours.map((tour) => ({
+        ...tour,
+        status: getAutomaticTourStatus(tour.returnDate, tour.status),
+      })),
+    [tours]
+  );
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('action') !== 'create') {
@@ -151,7 +169,8 @@ export default function ToursPage() {
     setIsSaving(true);
     setFormError('');
 
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const payload = Object.fromEntries(formData.entries());
 
     try {
@@ -171,7 +190,7 @@ export default function ToursPage() {
           ? currentTours.map((tour) => (tour.id === editingTour.id ? data : tour))
           : [data, ...currentTours]
       );
-      event.currentTarget.reset();
+      form.reset();
       setEditingTour(null);
       setShowForm(false);
     } catch (error) {
@@ -184,16 +203,16 @@ export default function ToursPage() {
   const filterOptions = useMemo(() => {
     const destinations = new Set<string>();
 
-    tours.forEach((tour) => {
+    displayTours.forEach((tour) => {
       destinations.add(tour.destination);
     });
 
     return {
       destinations: Array.from(destinations).sort((a, b) => a.localeCompare(b)),
     };
-  }, [tours]);
+  }, [displayTours]);
 
-  const filteredTours = tours.filter((tour) => {
+  const filteredTours = displayTours.filter((tour) => {
     const departureDate = tour.departureDate.slice(0, 10);
     const query = searchQuery.toLowerCase();
     const matchesSearch =
@@ -229,10 +248,10 @@ export default function ToursPage() {
   };
 
   const totalOccupancy =
-    tours.length > 0
+    displayTours.length > 0
       ? Math.round(
-          (tours.reduce((acc, t) => acc + t.occupiedSeats, 0) /
-            tours.reduce((acc, t) => acc + t.totalSeats, 0)) *
+          (displayTours.reduce((acc, t) => acc + t.occupiedSeats, 0) /
+            displayTours.reduce((acc, t) => acc + t.totalSeats, 0)) *
             100
         )
       : 0;
@@ -258,12 +277,24 @@ export default function ToursPage() {
         </div>
 
         {showForm && (
-          <Card>
-            <CardHeader>
-              <CardTitle>{editingTour ? 'Edit Tour' : 'Create New Tour'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSaveTour} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <Card className="max-h-[90vh] w-full max-w-3xl overflow-y-auto shadow-xl">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <CardTitle>{editingTour ? 'Edit Tour' : 'Create New Tour'}</CardTitle>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditingTour(null);
+                    setShowForm(false);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSaveTour} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Tour Name</Label>
                   <Input
@@ -382,10 +413,78 @@ export default function ToursPage() {
                     Cancel
                   </Button>
                 </div>
-              </form>
-            </CardContent>
-          </Card>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
         )}
+
+        {viewingTour ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <Card className="w-full max-w-2xl shadow-xl">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>{viewingTour.tourName}</CardTitle>
+                  <CardDescription>{viewingTour.tourCode}</CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setViewingTour(null)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-gray-600">Destination</p>
+                    <p className="font-medium">{viewingTour.destination}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Pickup City</p>
+                    <p className="font-medium">{viewingTour.pickupCity}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Departure</p>
+                    <p className="font-medium">{formatDate(viewingTour.departureDate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Return</p>
+                    <p className="font-medium">{formatDate(viewingTour.returnDate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Seats</p>
+                    <p className="font-medium">
+                      {viewingTour.occupiedSeats}/{viewingTour.totalSeats}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Manager</p>
+                    <p className="font-medium">{viewingTour.tourManager}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Adult Price</p>
+                    <p className="font-medium">{formatCurrency(viewingTour.packagePrice)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Child Price</p>
+                    <p className="font-medium">
+                      {formatCurrency(viewingTour.childPrice ?? 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Status</p>
+                    <Badge className={getStatusColor(viewingTour.status)}>
+                      {viewingTour.status}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
 
         <Card>
           <CardHeader>
@@ -460,12 +559,13 @@ export default function ToursPage() {
                     <TableRow key={tour.id}>
                       <TableCell>
                         <div>
-                          <Link
-                            href={`/tours/${tour.id}`}
+                          <button
+                            type="button"
+                            onClick={() => setViewingTour(tour)}
                             className="font-medium hover:text-blue-600 hover:underline"
                           >
                             {tour.tourName}
-                          </Link>
+                          </button>
                           <p className="text-sm text-gray-600">{tour.tourCode}</p>
                         </div>
                       </TableCell>
@@ -503,10 +603,13 @@ export default function ToursPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button size="sm" variant="ghost" asChild>
-                            <Link href={`/tours/${tour.id}`} aria-label={`View ${tour.tourName}`}>
-                              <Eye size={16} />
-                            </Link>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setViewingTour(tour)}
+                            aria-label={`View ${tour.tourName}`}
+                          >
+                            <Eye size={16} />
                           </Button>
                           <Button
                             size="sm"
@@ -519,9 +622,6 @@ export default function ToursPage() {
                             aria-label={`Edit ${tour.tourName}`}
                           >
                             <Edit2 size={16} />
-                          </Button>
-                          <Button size="sm" variant="ghost">
-                            <Archive size={16} />
                           </Button>
                         </div>
                       </TableCell>
@@ -537,7 +637,7 @@ export default function ToursPage() {
           <Card>
             <CardContent className="pt-6 text-center">
               <p className="text-sm text-gray-600">Total Tours</p>
-              <p className="text-3xl font-bold">{tours.length}</p>
+              <p className="text-3xl font-bold">{displayTours.length}</p>
             </CardContent>
           </Card>
 
@@ -545,7 +645,7 @@ export default function ToursPage() {
             <CardContent className="pt-6 text-center">
               <p className="text-sm text-gray-600">Active Tours</p>
               <p className="text-3xl font-bold">
-                {tours.filter((t) => t.status === 'active').length}
+                {displayTours.filter((t) => t.status === 'active').length}
               </p>
             </CardContent>
           </Card>

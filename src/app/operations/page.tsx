@@ -1,6 +1,6 @@
 'use client';
 
-import React, { type FormEvent, useState } from 'react';
+import React, { useState } from 'react';
 import { MainLayout } from '@/components/layout/main-layout';
 import {
   Card,
@@ -9,8 +9,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -19,7 +17,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus } from 'lucide-react';
 import { formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 
@@ -48,13 +45,6 @@ const mockTours = [
         ticketIssued: false,
       },
     ],
-    rooms: [
-      {
-        roomNumber: '101',
-        capacity: 2,
-        occupants: ['Rajesh Kumar', 'Priya Singh'],
-      },
-    ],
   },
 ];
 
@@ -63,50 +53,13 @@ const emptyTour: (typeof mockTours)[number] = {
   name: '',
   departure: '',
   travelers: [],
-  rooms: [],
 };
 
 export default function OperationsPage() {
-  const [tours, setTours] = useRecords('/api/operations', [] as typeof mockTours);
+  const [tours] = useRecords('/api/operations', [] as typeof mockTours);
   const [selectedTourId, setSelectedTourId] = useState('');
-  const [showRoomForm, setShowRoomForm] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [formError, setFormError] = useState('');
   const selectedTour =
     tours.find((tour) => String(tour.id) === selectedTourId) ?? tours[0] ?? emptyTour;
-
-  const handleAddRoom = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSaving(true);
-    setFormError('');
-
-    const form = event.currentTarget;
-    const payload = {
-      tourId: selectedTour.id,
-      ...Object.fromEntries(new FormData(form).entries()),
-    };
-
-    try {
-      const response = await fetch('/api/operations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error ?? 'Unable to add room');
-      }
-
-      setTours(data);
-      form.reset();
-      setShowRoomForm(false);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Unable to add room');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -233,55 +186,6 @@ export default function OperationsPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>Room Allocation</CardTitle>
-              <Button onClick={() => setShowRoomForm(!showRoomForm)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Room
-              </Button>
-            </div>
-          </CardHeader>
-
-          <CardContent>
-            {showRoomForm && (
-              <form onSubmit={handleAddRoom} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <Input name="roomNumber" placeholder="Room Number" required />
-                <Input name="capacity" type="number" min="1" placeholder="Capacity" required />
-                <Input name="occupants" placeholder="Occupants, comma separated" required />
-                {formError && <p className="md:col-span-3 text-sm text-red-600">{formError}</p>}
-                <div className="md:col-span-3 flex gap-2">
-                  <Button type="submit" className="flex-1" disabled={isSaving}>
-                    {isSaving ? 'Saving...' : 'Save Room'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowRoomForm(false)}
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              {selectedTour.rooms.map((room, index) => (
-                <Card key={index}>
-                  <CardContent className="pt-6">
-                    <h4 className="font-semibold">Room {room.roomNumber}</h4>
-                    <p>Capacity: {room.capacity}</p>
-                    {room.occupants.map((occupant, idx) => (
-                      <p key={idx}>- {occupant}</p>
-                    ))}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </MainLayout>
   );

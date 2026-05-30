@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency, GENDER_OPTIONS, PAYMENT_MODES, ROOM_SHARING_OPTIONS } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import { Edit2, Eye, Plus, Trash2 } from 'lucide-react';
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 type BookingMemberRecord = {
   id: string;
@@ -279,7 +280,8 @@ const readJsonResponse = async (response: Response) => {
   }
 };
 
-export default function BookingsPage() {
+function BookingsContent() {
+  const searchParams = useSearchParams();
   const [bookings, setBookings] = useRecords('/api/bookings', [] as typeof mockBookings);
   const [tours] = useRecords('/api/tours', [] as typeof mockTours);
   const [showForm, setShowForm] = useState(false);
@@ -291,9 +293,11 @@ export default function BookingsPage() {
   const [formError, setFormError] = useState('');
   const [editingBooking, setEditingBooking] = useState<BookingRecord | null>(null);
   const [viewingBooking, setViewingBooking] = useState<BookingRecord | null>(null);
+  const [handledEditBookingId, setHandledEditBookingId] = useState('');
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberForm[]>([]);
   const [roomPreferences, setRoomPreferences] = useState<RoomPreferenceForm[]>([]);
   const [advancePaidInput, setAdvancePaidInput] = useState('');
+  const [discountInput, setDiscountInput] = useState('');
   const [selectedTourId, setSelectedTourId] = useState('');
   const [mainPassengerType, setMainPassengerType] = useState('adult');
   const [documentNames, setDocumentNames] = useState<DocumentNames>({
@@ -311,9 +315,13 @@ export default function BookingsPage() {
   const childCount =
     (mainPassengerType === 'child' ? 1 : 0) +
     familyMembers.filter((member) => member.passengerType === 'child').length;
-  const calculatedTotalAmount =
+  const grossTotalAmount =
     adultCount * Number(selectedTour?.packagePrice ?? 0) +
     childCount * Number(selectedTour?.childPrice ?? 0);
+  const calculatedTotalAmount = Math.max(
+    grossTotalAmount - Number(discountInput || 0),
+    0
+  );
 
   const calculatedBalance = Math.max(
     calculatedTotalAmount - Number(advancePaidInput || 0),
@@ -322,7 +330,7 @@ export default function BookingsPage() {
   const editingName = splitName(editingBooking?.travelerName ?? '');
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('action') !== 'create') {
+    if (searchParams.get('action') !== 'create') {
       return;
     }
 
@@ -332,6 +340,7 @@ export default function BookingsPage() {
       setFamilyMembers([]);
       setRoomPreferences([]);
       setAdvancePaidInput('');
+      setDiscountInput('');
       setSelectedTourId('');
       setMainPassengerType('adult');
       setDocumentNames({ aadhaarFileName: '', panFileName: '' });
@@ -339,7 +348,7 @@ export default function BookingsPage() {
       setFormError('');
       setShowForm(true);
     }, 0);
-  }, []);
+  }, [searchParams]);
 
   const handleSaveBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -471,6 +480,7 @@ export default function BookingsPage() {
       setFamilyMembers([]);
       setRoomPreferences([]);
       setAdvancePaidInput('');
+      setDiscountInput('');
       setSelectedTourId('');
       setMainPassengerType('adult');
       setDocumentNames({ aadhaarFileName: '', panFileName: '' });
@@ -483,7 +493,7 @@ export default function BookingsPage() {
     }
   };
 
-  const startEditingBooking = (booking: BookingRecord) => {
+  const startEditingBooking = useCallback((booking: BookingRecord) => {
     setEditingBooking(booking);
     setFamilyMembers(
       (booking.members ?? []).map((member) => ({
@@ -511,6 +521,7 @@ export default function BookingsPage() {
     setRoomPreferences(parseRoomPreferences(booking.roomSharing));
     setSelectedTourId(tours.find((tour) => tour.tourName === booking.tour)?.id ?? '');
     setAdvancePaidInput(String(booking.advancePaid ?? ''));
+    setDiscountInput('');
     setMainPassengerType('adult');
     setDocumentNames({
       aadhaarFileName: booking.aadhaarFileName ?? '',
@@ -526,13 +537,33 @@ export default function BookingsPage() {
     setFormError('');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, [tours]);
+
+  useEffect(() => {
+    const bookingId = searchParams.get('edit');
+
+    if (!bookingId || handledEditBookingId === bookingId || editingBooking?.id === bookingId) {
+      return;
+    }
+
+    const booking = bookings.find((currentBooking) => currentBooking.id === bookingId);
+
+    if (!booking) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      startEditingBooking(booking);
+      setHandledEditBookingId(bookingId);
+    }, 0);
+  }, [bookings, editingBooking?.id, handledEditBookingId, searchParams, startEditingBooking]);
 
   const closeForm = () => {
     setEditingBooking(null);
     setFamilyMembers([]);
     setRoomPreferences([]);
     setAdvancePaidInput('');
+    setDiscountInput('');
     setSelectedTourId('');
     setMainPassengerType('adult');
     setDocumentNames({ aadhaarFileName: '', panFileName: '' });
@@ -773,6 +804,7 @@ export default function BookingsPage() {
               setFamilyMembers([]);
               setRoomPreferences([]);
               setAdvancePaidInput('');
+              setDiscountInput('');
               setSelectedTourId('');
               setMainPassengerType('adult');
               setDocumentNames({ aadhaarFileName: '', panFileName: '' });
@@ -1284,6 +1316,27 @@ export default function BookingsPage() {
                       />
                     </div>
                     <div>
+                      <Label>Gross Amount</Label>
+                      <Input
+                        type="number"
+                        value={grossTotalAmount}
+                        readOnly
+                        className="font-semibold text-black"
+                      />
+                    </div>
+                    <div>
+                      <Label>Discount</Label>
+                      <Input
+                        name="discount"
+                        type="number"
+                        min="0"
+                        max={grossTotalAmount}
+                        placeholder="Discount amount"
+                        value={discountInput}
+                        onChange={(event) => setDiscountInput(event.target.value)}
+                      />
+                    </div>
+                    <div>
                       <Label>Total Amount</Label>
                       <Input
                         type="number"
@@ -1665,5 +1718,13 @@ export default function BookingsPage() {
       </Card>
       </div>
     </MainLayout>
+  );
+}
+
+export default function BookingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingsContent />
+    </Suspense>
   );
 }

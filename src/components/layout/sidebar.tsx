@@ -15,9 +15,10 @@ import {
     Settings,
     Users,
     X,
+    UserCog,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import React from 'react';
 
 const sidebarItems = [
@@ -25,6 +26,12 @@ const sidebarItems = [
     name: 'Dashboard',
     href: ROUTES.DASHBOARD,
     icon: LayoutDashboard,
+  },
+  {
+    name: 'Employee Access',
+    href: ROUTES.EMPLOYEE_ACCESS,
+    icon: UserCog,
+    adminOnly: true,
   },
   {
     name: 'Tours',
@@ -65,6 +72,7 @@ const sidebarItems = [
     name: 'Reports',
     href: ROUTES.REPORTS,
     icon: BarChart3,
+    adminOnly: true,
   },
   {
     name: 'Settings',
@@ -75,7 +83,42 @@ const sidebarItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isOpen, setIsOpen] = React.useState(false);
+  const [isAdmin, setIsAdmin] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+
+    fetch('/api/auth/session', { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Unable to load session');
+        }
+
+        return response.json();
+      })
+      .then((session) => {
+        if (active) {
+          setIsAdmin(session.role === 'admin');
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setIsAdmin(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/login');
+    router.refresh();
+  }
 
   return (
     <>
@@ -94,15 +137,17 @@ export function Sidebar() {
       <aside
         className={`${
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0 fixed left-0 top-0 z-40 w-64 h-screen bg-gray-900 text-white transition-transform duration-300 overflow-y-auto`}
+        } scrollbar-hidden lg:translate-x-0 fixed left-0 top-0 z-40 flex h-screen w-64 flex-col overflow-hidden bg-gray-900 text-white transition-transform duration-300`}
       >
-        <div className="p-6">
+        <div className="shrink-0 p-6">
           <h1 className="text-2xl font-bold">Prapancha Pravasa Tours Private Limited</h1>
           <p className="text-sm text-gray-400 mt-1">Tour Operation CRM</p>
         </div>
 
-        <nav className="space-y-2 p-4">
-          {sidebarItems.map((item) => {
+        <nav className="scrollbar-hidden min-h-0 flex-1 space-y-2 overflow-y-scroll p-4">
+          {sidebarItems
+            .filter((item) => !item.adminOnly || isAdmin)
+            .map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
 
@@ -124,13 +169,11 @@ export function Sidebar() {
         </nav>
 
         {/* Logout */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
+        <div className="shrink-0 border-t border-gray-800 p-4">
           <Button
             variant="ghost"
             className="w-full justify-start text-gray-300 hover:bg-gray-800 hover:text-white"
-            onClick={() => {
-              // Handle logout
-            }}
+            onClick={handleLogout}
           >
             <LogOut size={20} className="mr-2" />
             Logout
