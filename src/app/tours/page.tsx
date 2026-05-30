@@ -23,6 +23,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { useRecords } from '@/lib/use-records';
 import { Edit2, Eye, Plus, X } from 'lucide-react';
+import Link from 'next/link';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 
 const mockTours = [
@@ -559,13 +560,12 @@ export default function ToursPage() {
                     <TableRow key={tour.id}>
                       <TableCell>
                         <div>
-                          <button
-                            type="button"
-                            onClick={() => setViewingTour(tour)}
+                          <Link
+                            href={`/tours/${tour.id}`}
                             className="font-medium hover:text-blue-600 hover:underline"
                           >
                             {tour.tourName}
-                          </button>
+                          </Link>
                           <p className="text-sm text-gray-600">{tour.tourCode}</p>
                         </div>
                       </TableCell>
